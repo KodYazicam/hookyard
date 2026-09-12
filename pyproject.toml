@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hookyard"
+version = "1.0.0"
+description = "Local webhook inspector. Catch, inspect, verify, and replay HTTP callbacks."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Batuhan (KodYazicam)", email = "kodyazicam@users.noreply.github.com" }]
+requires-python = ">=3.10"
+keywords = ["webhook", "http", "fastapi", "stripe", "github", "discord", "debug"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Framework :: FastAPI",
+  "License :: Other/Proprietary License",
+  "Environment :: Console",
+]
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+
+[project.scripts]
+hookyard = "hookyard.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/KodYazicam/hookyard"
+Source = "https://github.com/KodYazicam/hookyard"
+
+[tool.setuptools.packages.find]
+include = ["hookyard*"]
+
+[tool.setuptools.package-data]
+hookyard = ["templates/*", "static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

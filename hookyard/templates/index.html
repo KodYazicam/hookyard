@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>hookyard</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>hookyard</h1>
+      <p>Local webhook inspector · KodYazicam</p>
+    </div>
+    <div class="row">
+      <input id="bin" value="demo" spellcheck="false">
+      <button id="create">Open bin</button>
+      <button id="clear" class="ghost">Clear</button>
+    </div>
+  </header>
+  <main>
+    <aside>
+      <p class="hint">POST to <code id="url"></code></p>
+      <ul id="list"></ul>
+    </aside>
+    <section id="detail">
+      <p class="empty">Waiting for webhooks…</p>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
