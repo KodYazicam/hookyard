@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -64,7 +64,7 @@ def create_app(
         return {"status": "ok", "name": "hookyard"}
 
     @app.post("/api/bins")
-    async def create_bin(payload: dict[str, Any] | None = None) -> dict[str, str]:
+    async def create_bin(payload: dict[str, Any] | None = Body(default=None)) -> dict[str, str]:
         bin_id = (payload or {}).get("id")
         return {"id": store.create_bin(bin_id)}
 
@@ -131,7 +131,9 @@ def create_app(
         if request.headers.get("content-type", "").startswith("application/json"):
             try:
                 parsed = json.loads(record.body)
-                if parsed.get("type") == 1:
+                if parsed.get("type") == 1 and (
+                    "discord" not in secrets or signatures.get("discord")
+                ):
                     return {"type": 1}
             except json.JSONDecodeError:
                 pass

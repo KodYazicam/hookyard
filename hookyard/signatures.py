@@ -20,10 +20,17 @@ def verify_github(body: bytes, signature_header: str | None, secret: str) -> boo
 def verify_stripe(body: bytes, signature_header: str | None, secret: str, tolerance: int = 300) -> bool:
     if not signature_header or not secret:
         return False
-    parts = dict(item.split("=", 1) for item in signature_header.split(",") if "=" in item)
-    timestamp = parts.get("t")
-    signature = parts.get("v1")
-    if not timestamp or not signature:
+    timestamp = None
+    signatures: list[str] = []
+    for item in signature_header.split(","):
+        if "=" not in item:
+            continue
+        key, value = item.strip().split("=", 1)
+        if key == "t":
+            timestamp = value
+        elif key == "v1":
+            signatures.append(value)
+    if not timestamp or not signatures:
         return False
     try:
         ts = int(timestamp)
@@ -33,7 +40,7 @@ def verify_stripe(body: bytes, signature_header: str | None, secret: str, tolera
         return False
     signed = f"{timestamp}.".encode() + body
     digest = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
-    return _eq(digest, signature)
+    return any(_eq(digest, signature) for signature in signatures)
 
 
 def verify_slack(body: bytes, timestamp: str | None, signature: str | None, secret: str, tolerance: int = 300) -> bool:

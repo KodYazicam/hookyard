@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from hookyard.app import create_app
 from hookyard.signatures import verify_github, verify_stripe, verify_slack, verify_discord
 from hookyard.store import MemoryStore, new_record
-from hookyard.replay import pretty_json
+from hookyard.replay import pretty_json, replay
 from hookyard.cli import build_parser
 
 
@@ -28,6 +28,7 @@ def test_stripe_signature() -> None:
     digest = hmac.new(secret.encode(), f"{ts}.".encode() + body, hashlib.sha256).hexdigest()
     header = f"t={ts},v1={digest}"
     assert verify_stripe(body, header, secret)
+    assert verify_stripe(body, f"t={ts},v1=nope,v1={digest}", secret)
     assert not verify_stripe(body, f"t={ts},v1=nope", secret)
 
 
@@ -56,6 +57,7 @@ def test_store_and_pretty() -> None:
     store.add(c)
     assert len(store.list(bin_id)) == 2
     assert pretty_json('{"a":1}') == '{\n  "a": 1\n}'
+    assert replay(a, "not-a-url")["ok"] is False
 
 
 def test_app_catch_and_api() -> None:

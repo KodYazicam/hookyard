@@ -4,6 +4,7 @@ import json
 import urllib.error
 import urllib.request
 from typing import Any
+from urllib.parse import urlparse
 
 from .store import RequestRecord
 
@@ -22,6 +23,9 @@ HOP_BY_HOP = {
 
 
 def replay(record: RequestRecord, target: str, timeout: float = 10.0) -> dict[str, Any]:
+    parsed = urlparse(target)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return {"ok": False, "status": 0, "headers": {}, "body": "target must be http(s)"}
     headers = {
         k: v
         for k, v in record.headers.items()

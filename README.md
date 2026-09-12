@@ -30,7 +30,7 @@ Point Stripe / GitHub / any SaaS webhook URL at a bin. The UI lists every reques
 
 - Zero-config FastAPI server + live UI (WebSocket)
 - Catch-all bins: `POST /b/{bin}/any/path`
-- Signature checks: GitHub SHA-256, Stripe `t,v1`, Slack `v0=`, Discord Ed25519 (optional PyNaCl)
+- Signature checks: GitHub SHA-256, Stripe `t,v1` (multiple `v1` signatures), Slack `v0=`, Discord Ed25519 (`pip install hookyard[discord]`)
 - Replay to `localhost` with hop-by-hop headers stripped
 - Discord PING (`type: 1`) auto-ack so the Interactions endpoint validates
 - In-memory store (no database)
