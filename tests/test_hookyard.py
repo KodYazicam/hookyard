@@ -58,6 +58,8 @@ def test_store_and_pretty() -> None:
     assert len(store.list(bin_id)) == 2
     assert pretty_json('{"a":1}') == '{\n  "a": 1\n}'
     assert replay(a, "not-a-url")["ok"] is False
+    assert replay(a, "http://example.com/hook")["ok"] is False
+    assert "localhost" in replay(a, "http://example.com/hook")["body"] or "private" in replay(a, "http://example.com/hook")["body"]
 
 
 def test_app_catch_and_api() -> None:

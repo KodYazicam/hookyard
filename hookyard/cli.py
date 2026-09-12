@@ -16,6 +16,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stripe-secret", default=os.environ.get("HOOKYARD_STRIPE_SECRET", ""))
     parser.add_argument("--slack-secret", default=os.environ.get("HOOKYARD_SLACK_SECRET", ""))
     parser.add_argument("--discord-public-key", default=os.environ.get("HOOKYARD_DISCORD_PUBLIC_KEY", ""))
+    parser.add_argument(
+        "--allow-remote-replay",
+        action="store_true",
+        help="Allow replaying captured requests to non-local hosts (SSRF risk).",
+    )
     parser.add_argument("--version", action="store_true")
     return parser
 
@@ -42,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from .app import create_app
 
-    app = create_app(secrets=secrets)
+    app = create_app(secrets=secrets, allow_remote_replay=args.allow_remote_replay)
     try:
         import uvicorn
     except ImportError:
@@ -51,6 +56,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"hookyard  http://{args.host}:{args.port}")
     print(f"catch at  http://{args.host}:{args.port}/b/demo")
+    if args.host not in {"127.0.0.1", "localhost", "::1"}:
+        print("warning: bound on a public interface; replay is still localhost-only unless --allow-remote-replay")
     print("built by  KodYazicam  https://github.com/KodYazicam/hookyard")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0

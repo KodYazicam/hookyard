@@ -42,6 +42,7 @@ class Hub:
 def create_app(
     store: MemoryStore | None = None,
     secrets: dict[str, str] | None = None,
+    allow_remote_replay: bool = False,
 ) -> FastAPI:
     store = store or MemoryStore()
     secrets = secrets or {}
@@ -97,7 +98,7 @@ def create_app(
         target = payload.get("target")
         if not target:
             return JSONResponse({"error": "target required"}, status_code=400)
-        return JSONResponse(replay(record, target))
+        return JSONResponse(replay(record, target, allow_remote=allow_remote_replay))
 
     @app.websocket("/ws")
     async def ws_feed(ws: WebSocket) -> None:

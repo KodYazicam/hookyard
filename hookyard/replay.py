@@ -22,10 +22,37 @@ HOP_BY_HOP = {
 }
 
 
-def replay(record: RequestRecord, target: str, timeout: float = 10.0) -> dict[str, Any]:
+BLOCKED_HOSTS = {
+    "169.254.169.254",
+    "metadata.google.internal",
+    "metadata.goog",
+}
+
+def _host_allowed(hostname: str, allow_remote: bool) -> bool:
+    host = hostname.lower().rstrip(".")
+    if host in BLOCKED_HOSTS:
+        return False
+    if allow_remote:
+        return True
+    if host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}:
+        return True
+    if host.startswith("10.") or host.startswith("192.168.") or host.startswith("172."):
+        return True
+    return False
+
+
+def replay(record: RequestRecord, target: str, timeout: float = 10.0, allow_remote: bool = False) -> dict[str, Any]:
     parsed = urlparse(target)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return {"ok": False, "status": 0, "headers": {}, "body": "target must be http(s)"}
+    hostname = parsed.hostname or ""
+    if not _host_allowed(hostname, allow_remote):
+        return {
+            "ok": False,
+            "status": 0,
+            "headers": {},
+            "body": "replay is limited to localhost/private hosts (pass allow_remote to override)",
+        }
     headers = {
         k: v
         for k, v in record.headers.items()
