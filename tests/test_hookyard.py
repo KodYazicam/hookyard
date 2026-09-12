@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from hookyard.app import create_app
 from hookyard.signatures import verify_github, verify_stripe, verify_slack, verify_discord
+from hookyard.persist import JsonFileStore
 from hookyard.store import MemoryStore, new_record
 from hookyard.replay import pretty_json, replay
 from hookyard.cli import build_parser
@@ -82,6 +83,19 @@ def test_app_catch_and_api() -> None:
     one = client.get(f"/api/bins/demo/{data['id']}").json()
     assert "hello" in one["pretty"]
     assert client.get("/").status_code == 200
+
+
+def test_json_file_store(tmp_path) -> None:
+    path = tmp_path / "store.json"
+    store = JsonFileStore(path, limit=10)
+    bin_id = store.create_bin("demo")
+    store.add(new_record(bin_id, "POST", "/hook", "", {"x": "1"}, '{"ok":true}', "127.0.0.1"))
+    again = JsonFileStore(path, limit=10)
+    rows = again.list("demo")
+    assert len(rows) == 1
+    assert rows[0].body == '{"ok":true}'
+    again.clear("demo")
+    assert JsonFileStore(path).list("demo") == []
 
 
 def test_cli_parser() -> None:

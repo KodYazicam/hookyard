@@ -69,6 +69,8 @@ pytest
 
 ```bash
 hookyard --port 4242
+# persist across restarts:
+hookyard --port 4242 --data-file ./hookyard.json
 ```
 
 Then:
@@ -108,6 +110,16 @@ cloudflared tunnel --url http://127.0.0.1:4242
 Put the public URL + `/b/demo` in the vendor dashboard.
 
 `--host 0.0.0.0` binds all interfaces. hookyard **warns** on stderr. Replay is still localhost-only unless you pass `--allow-remote-replay`.
+
+### Docker
+
+```bash
+docker compose up --build
+# UI: http://127.0.0.1:4242
+# data: named volume hookyard-data  (/data/hookyard.json)
+```
+
+Or `docker run -p 4242:4242 -v hookyard:/data ghcr.io/kodyazicam/hookyard` after you build the image locally (`docker compose build`).
 
 ## Signature verification
 
@@ -160,6 +172,7 @@ hookyard --host 127.0.0.1 --port 4242 \
 --slack-secret
 --discord-public-key
 --allow-remote-replay
+--data-file PATH         persist bins as JSON (or HOOKYARD_DATA_FILE)
 --version
 ```
 
@@ -211,7 +224,7 @@ app = create_app(secrets={"github": "..."}, allow_remote_replay=False)
 
 **Is this webhook.site?** Same idea, local, with provider HMAC built in.
 
-**Does it persist to disk?** No.
+**Does it persist to disk?** Only with `--data-file` / `HOOKYARD_DATA_FILE`. Default is memory.
 
 **HTTPS?** Terminate TLS on the tunnel / reverse proxy.
 

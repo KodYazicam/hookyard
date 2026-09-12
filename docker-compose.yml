@@ -1,0 +1,16 @@
+services:
+  hookyard:
+    build: .
+    ports:
+      - "4242:4242"
+    environment:
+      HOOKYARD_GITHUB_SECRET: ${HOOKYARD_GITHUB_SECRET:-}
+      HOOKYARD_STRIPE_SECRET: ${HOOKYARD_STRIPE_SECRET:-}
+      HOOKYARD_SLACK_SECRET: ${HOOKYARD_SLACK_SECRET:-}
+      HOOKYARD_DISCORD_PUBLIC_KEY: ${HOOKYARD_DISCORD_PUBLIC_KEY:-}
+    volumes:
+      - hookyard-data:/data
+    restart: unless-stopped
+
+volumes:
+  hookyard-data:

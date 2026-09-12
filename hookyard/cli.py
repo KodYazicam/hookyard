@@ -21,6 +21,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Allow replaying captured requests to non-local hosts (SSRF risk).",
     )
+    parser.add_argument(
+        "--data-file",
+        default=os.environ.get("HOOKYARD_DATA_FILE", ""),
+        help="JSON file to persist captured requests (default: memory only).",
+    )
     parser.add_argument("--version", action="store_true")
     return parser
 
@@ -46,8 +51,11 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     from .app import create_app
+    from .persist import JsonFileStore
+    from .store import MemoryStore
 
-    app = create_app(secrets=secrets, allow_remote_replay=args.allow_remote_replay)
+    store = JsonFileStore(args.data_file) if args.data_file else MemoryStore()
+    app = create_app(store=store, secrets=secrets, allow_remote_replay=args.allow_remote_replay)
     try:
         import uvicorn
     except ImportError:
@@ -56,6 +64,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"hookyard  http://{args.host}:{args.port}")
     print(f"catch at  http://{args.host}:{args.port}/b/demo")
+    if args.data_file:
+        print(f"persist   {args.data_file}")
     if args.host not in {"127.0.0.1", "localhost", "::1"}:
         print("warning: bound on a public interface; replay is still localhost-only unless --allow-remote-replay")
     print("built by  KodYazicam  https://github.com/KodYazicam/hookyard")
