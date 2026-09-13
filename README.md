@@ -19,7 +19,10 @@
 ngrok shows you a tunnel. hookyard shows you the **payload**.
 
 ```bash
-pip install hookyard
+git clone https://github.com/KodYazicam/hookyard.git
+cd hookyard
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
 hookyard --port 4242
 # POST http://127.0.0.1:4242/b/demo
 ```
@@ -50,22 +53,21 @@ Catch URLs (`/b/{bin}`) stay public so vendors can POST. The UI and `/api/*` can
 ## Requirements
 
 - Python **3.10+**
-- Optional: [PyNaCl](https://pypi.org/project/PyNaCl/) for Discord Ed25519 (`pip install hookyard[discord]`)
+- Optional: [PyNaCl](https://pypi.org/project/PyNaCl/) for Discord Ed25519 (`pip install -e ".[discord]"` in this clone)
 - Optional: Cloudflare Tunnel / ngrok if a vendor must reach your machine
 
 ## Install
 
-```bash
-pip install hookyard
-# or isolated
-pipx install hookyard
+Not on PyPI. Clone and install editable:
 
+```bash
 git clone https://github.com/KodYazicam/hookyard.git
 cd hookyard
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 pytest
+hookyard --help
 ```
 
 ## Quick start
@@ -262,7 +264,7 @@ Full policy: [SECURITY.md](./SECURITY.md).
 
 ## License — KYAL-1.0
 
-Free to use and modify. **Attribution is mandatory.** PyPI classifier says “Other/Proprietary” because KYAL is not on the SPDX OSI list; the text is MIT-shaped plus credit.
+Free to use and modify. **Attribution is mandatory.** Not OSI-approved; MIT-shaped plus credit. Not published to PyPI — clone this repo.
 
 ```
 Author : Batuhan (KodYazicam)

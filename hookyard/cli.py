@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         import uvicorn
     except ImportError:
-        print("uvicorn is required to run the server: pip install hookyard", file=sys.stderr)
+        print("uvicorn is required to run the server: pip install -e .  (from the hookyard clone)", file=sys.stderr)
         return 1
 
     print(f"hookyard  http://{args.host}:{args.port}")
