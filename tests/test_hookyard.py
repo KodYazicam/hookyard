@@ -10,7 +10,7 @@ from hookyard.app import create_app
 from hookyard.signatures import verify_github, verify_stripe, verify_slack, verify_discord
 from hookyard.persist import JsonFileStore
 from hookyard.store import MemoryStore, new_record
-from hookyard.replay import pretty_json, replay
+from hookyard.replay import pretty_json, replay, host_allowed
 from hookyard.cli import build_parser
 
 
@@ -20,6 +20,7 @@ def test_github_signature() -> None:
     digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     assert verify_github(body, f"sha256={digest}", secret)
     assert not verify_github(body, "sha256=dead", secret)
+    assert not verify_github(body, "sha256=short", secret)
 
 
 def test_stripe_signature() -> None:
@@ -37,7 +38,7 @@ def test_slack_signature() -> None:
     body = b"payload=ok"
     secret = "slack-secret"
     ts = str(int(time.time()))
-    basestring = f"v0:{ts}:{body.decode()}".encode()
+    basestring = b"v0:" + ts.encode() + b":" + body
     sig = "v0=" + hmac.new(secret.encode(), basestring, hashlib.sha256).hexdigest()
     assert verify_slack(body, ts, sig, secret)
     assert not verify_slack(body, ts, "v0=nope", secret)
@@ -60,7 +61,25 @@ def test_store_and_pretty() -> None:
     assert pretty_json('{"a":1}') == '{\n  "a": 1\n}'
     assert replay(a, "not-a-url")["ok"] is False
     assert replay(a, "http://example.com/hook")["ok"] is False
-    assert "localhost" in replay(a, "http://example.com/hook")["body"] or "private" in replay(a, "http://example.com/hook")["body"]
+
+
+def test_host_allowed_blocks_public_and_metadata() -> None:
+    ok, _ = host_allowed("127.0.0.1", False)
+    assert ok
+    ok, _ = host_allowed("10.0.0.5", False)
+    assert ok
+    ok, reason = host_allowed("172.32.0.1", False)
+    assert not ok
+    ok, _ = host_allowed("172.16.0.1", False)
+    assert ok
+    ok, _ = host_allowed("169.254.169.254", True)
+    assert not ok
+    ok, _ = host_allowed("0.0.0.0", False)
+    assert not ok
+    ok, _ = host_allowed("8.8.8.8", False)
+    assert not ok
+    ok, _ = host_allowed("8.8.8.8", True)
+    assert ok
 
 
 def test_app_catch_and_api() -> None:
@@ -85,6 +104,22 @@ def test_app_catch_and_api() -> None:
     assert client.get("/").status_code == 200
 
 
+def test_token_protects_ui_not_catch() -> None:
+    app = create_app(token="s3cret")
+    client = TestClient(app)
+    assert client.get("/api/bins").status_code == 401
+    assert client.get("/api/bins", headers={"Authorization": "Bearer s3cret"}).status_code == 200
+    caught = client.post("/b/demo", content=b"{}")
+    assert caught.status_code == 200
+
+
+def test_discord_ping_requires_key() -> None:
+    app = create_app()
+    client = TestClient(app)
+    res = client.post("/b/demo", content=b'{"type":1}', headers={"content-type": "application/json"})
+    assert res.status_code == 401
+
+
 def test_json_file_store(tmp_path) -> None:
     path = tmp_path / "store.json"
     store = JsonFileStore(path, limit=10)
@@ -99,6 +134,13 @@ def test_json_file_store(tmp_path) -> None:
 
 
 def test_cli_parser() -> None:
-    args = build_parser().parse_args(["--port", "9999", "--version"])
+    args = build_parser().parse_args(["--port", "9999", "--version", "--token", "abc"])
     assert args.port == 9999
     assert args.version
+    assert args.token == "abc"
+
+
+def test_invalid_bin_id() -> None:
+    app = create_app()
+    client = TestClient(app)
+    assert client.post("/b/no spaces", content=b"x").status_code in {400, 404}

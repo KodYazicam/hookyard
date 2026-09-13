@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>Local webhook inspector.</strong><br/>
-  Catch GitHub, Stripe, Slack, and Discord callbacks. Inspect, verify signatures, replay.
+  Catch GitHub, Stripe, Slack, and Discord callbacks. Inspect, verify signatures, replay — without turning your laptop into an SSRF gadget.
 </p>
 
 <p align="center">
@@ -26,12 +26,15 @@ hookyard --port 4242
 
 Open http://127.0.0.1:4242 — the UI lists every request, pretty-prints JSON, shows HMAC results, and can replay the same headers+body at your local API.
 
+Catch URLs (`/b/{bin}`) stay public so vendors can POST. The UI and `/api/*` can be locked with `--token`.
+
 ## Table of contents
 
 - [Requirements](#requirements)
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Bins and URLs](#bins-and-urls)
+- [Token auth](#token-auth)
 - [Expose it to the internet](#expose-it-to-the-internet)
 - [Signature verification](#signature-verification)
 - [Replay (SSRF-safe)](#replay-ssrf-safe)
@@ -71,28 +74,43 @@ pytest
 hookyard --port 4242
 # persist across restarts:
 hookyard --port 4242 --data-file ./hookyard.json
+# lock the UI if anyone else can reach the port:
+hookyard --port 4242 --token "$HOOKYARD_TOKEN"
 ```
 
 Then:
 
-1. Browser: http://127.0.0.1:4242
+1. Browser: http://127.0.0.1:4242 (add `?token=…` if you set `--token`)
 2. Bin name in the header (default `demo`) → **Open bin**
 3. Point a webhook at `http://127.0.0.1:4242/b/demo` (or `/b/demo/stripe`, any subpath)
 4. Send a test event. It appears live (WebSocket). Click a row for headers + pretty JSON.
-5. Replay to `http://127.0.0.1:3000/webhook` (localhost only by default)
+5. Replay to `http://127.0.0.1:3000/webhook` (localhost / RFC1918 only by default)
+
+Bodies larger than 1 MB are rejected (`413`). Bin ids must match `[A-Za-z0-9._-]{1,64}`.
 
 ## Bins and URLs
 
-| URL | Purpose |
-| --- | --- |
-| `GET /` | UI |
-| `ANY /b/{bin}` | Catch root of a bin |
-| `ANY /b/{bin}/{path}` | Catch with extra path (kept on the record) |
-| `GET /health` | `{ "status": "ok", "name": "hookyard" }` |
+| URL | Purpose | Auth |
+| --- | --- | --- |
+| `GET /` | UI | `--token` if set |
+| `ANY /b/{bin}` | Catch root of a bin | **none** (vendors POST here) |
+| `ANY /b/{bin}/{path}` | Catch with extra path (kept on the record) | none |
+| `GET /health` | `{ "status": "ok", "name": "hookyard" }` | none |
+| `/api/*` and `/ws` | Inspector API | `--token` if set |
 
 Methods: GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS. Bodies are stored as UTF-8 (replacement on binary).
 
-Store is **in-memory**, cap 500 requests per bin. Restarting the process clears history. Fine for debugging; not an archive.
+Store is **in-memory**, cap 500 requests per bin, unless you pass `--data-file`. Restarting the process clears history when you use memory.
+
+## Token auth
+
+```bash
+hookyard --token super-secret
+# UI: http://127.0.0.1:4242/?token=super-secret
+# API: Authorization: Bearer super-secret
+```
+
+The catch URL stays open. That is the point of a webhook inspector. If the UI is on a LAN, **always** set a token.
 
 ## Expose it to the internet
 
@@ -100,26 +118,26 @@ Vendors cannot POST to `127.0.0.1`. Tunnel it:
 
 ```bash
 # terminal 1
-hookyard --host 127.0.0.1 --port 4242 --github-secret "$GH_SECRET"
+hookyard --host 127.0.0.1 --port 4242 --github-secret "$GH_SECRET" --token "$HOOKYARD_TOKEN"
 
 # terminal 2
 cloudflared tunnel --url http://127.0.0.1:4242
 # or: ngrok http 4242
 ```
 
-Put the public URL + `/b/demo` in the vendor dashboard.
+Put the public URL + `/b/demo` in the vendor dashboard. Keep `--host 127.0.0.1` so only the tunnel can reach hookyard.
 
-`--host 0.0.0.0` binds all interfaces. hookyard **warns** on stderr. Replay is still localhost-only unless you pass `--allow-remote-replay`.
+`--host 0.0.0.0` binds all interfaces. hookyard **warns** on stderr. Without `--token` it warns again.
 
 ### Docker
 
 ```bash
-docker compose up --build
-# UI: http://127.0.0.1:4242
+HOOKYARD_TOKEN=pick-a-token docker compose up --build
+# UI: http://127.0.0.1:4242/?token=pick-a-token
 # data: named volume hookyard-data  (/data/hookyard.json)
 ```
 
-Or `docker run -p 4242:4242 -v hookyard:/data ghcr.io/kodyazicam/hookyard` after you build the image locally (`docker compose build`).
+Compose publishes **`127.0.0.1:4242`**, not `0.0.0.0`. The image runs as uid `10001` and has a `/health` HEALTHCHECK.
 
 ## Signature verification
 
@@ -132,41 +150,49 @@ Pass secrets on the CLI or via env. Each captured request gets `signatures: { gi
 | Slack | `X-Slack-Request-Timestamp` + `X-Slack-Signature` | `--slack-secret` / `HOOKYARD_SLACK_SECRET` |
 | Discord | `X-Signature-Ed25519` + `X-Signature-Timestamp` | `--discord-public-key` / `HOOKYARD_DISCORD_PUBLIC_KEY` (needs `hookyard[discord]`) |
 
-GitHub/Stripe/Slack use HMAC compare (timing-safe). Stripe timestamps must be within 300 seconds.
+GitHub/Stripe/Slack use HMAC compare (timing-safe, equal-length). Stripe timestamps must be within 300 seconds. Slack signs the **raw bytes**, not a UTF-8 round-trip.
+
+If you pass a Discord public key but PyNaCl is missing, the CLI warns at startup.
 
 ## Replay (SSRF-safe)
 
 `POST /api/bins/{bin}/{id}/replay` `{ "target": "http://127.0.0.1:3000/hook" }`
 
-Allowed targets by default:
+hookyard **resolves DNS** and checks every address:
 
-- `localhost`, `127.0.0.1`, `::1`
-- private ranges `10.*`, `192.168.*`, `172.*`
+- loopback (`127.0.0.0/8`, `::1`) — always allowed
+- RFC1918 (`10/8`, `172.16/12`, `192.168/16`) — allowed
+- `172.32.0.0/8` is **public** and blocked (hostname prefix `172.` is not trusted)
+- link-local, unspecified (`0.0.0.0`), multicast, reserved — blocked
+- `169.254.169.254` and GCP metadata hostnames — blocked **even with** `--allow-remote-replay`
 
-Blocked: public hosts, `169.254.169.254`, GCP metadata hostnames.
-
-Override with `--allow-remote-replay` (SSRF risk if the UI is exposed). Hop-by-hop headers (`Host`, `Content-Length`, `Connection`, …) are stripped.
+`--allow-remote-replay` only unlocks public unicast IPs. Hop-by-hop headers (`Host`, `Content-Length`, `Connection`, …) are stripped.
 
 ## Discord Interactions
 
-If the JSON body has `"type": 1` (PING), hookyard answers `{ "type": 1 }` so Discord can validate the endpoint.
+If the JSON body has `"type": 1` (PING), hookyard answers `{ "type": 1 }` **only when**:
 
-When a Discord public key is configured, the PING is only ACKed if the Ed25519 signature verifies.
+1. `--discord-public-key` is set, and
+2. Ed25519 verifies.
+
+Without a key, PING returns `401`. That stops a public bind from being used as a fake Interactions endpoint.
 
 ## CLI
 
 ```bash
 hookyard --host 127.0.0.1 --port 4242 \
+  --token "$HOOKYARD_TOKEN" \
   --github-secret "$GH_SECRET" \
   --stripe-secret "$STRIPE_WHSEC" \
   --slack-secret "$SLACK_SIGNING" \
   --discord-public-key "$DISCORD_PUBLIC_KEY" \
-  --allow-remote-replay   # optional, dangerous
+  --allow-remote-replay   # optional, still blocks metadata
 ```
 
 ```text
 --host                  default 127.0.0.1
 --port                  default 4242
+--token                 protect UI + /api
 --github-secret
 --stripe-secret
 --slack-secret
@@ -193,11 +219,12 @@ hookyard --host 127.0.0.1 --port 4242 \
 ```python
 from hookyard.signatures import verify_github, verify_stripe
 from hookyard.app import create_app
-from hookyard.replay import replay
+from hookyard.replay import replay, host_allowed
 
 assert verify_github(body, header, secret)
+ok, reason = host_allowed("127.0.0.1", allow_remote=False)
 
-app = create_app(secrets={"github": "..."}, allow_remote_replay=False)
+app = create_app(secrets={"github": "..."}, allow_remote_replay=False, token="ui-secret")
 ```
 
 `create_app` is a FastAPI app. Mount it behind your own process if you want.
@@ -205,9 +232,12 @@ app = create_app(secrets={"github": "..."}, allow_remote_replay=False)
 ## Security
 
 - Default bind is loopback.
-- Replay defaults to private hosts only.
-- Do not commit captured payloads; they can contain live secrets.
-- Treat `--allow-remote-replay` + `--host 0.0.0.0` as “anyone can make my machine POST anywhere.”
+- Replay resolves IPs; metadata stays blocked.
+- UI method/path are rendered with `textContent` (no HTML injection from a crafted webhook path).
+- Do not commit captured payloads (`hookyard.json` is gitignored); they can contain live secrets.
+- Treat `--host 0.0.0.0` without `--token` as “anyone can read my webhooks.”
+
+Full policy: [SECURITY.md](./SECURITY.md).
 
 ## Troubleshooting
 
@@ -215,10 +245,12 @@ app = create_app(secrets={"github": "..."}, allow_remote_replay=False)
 | --- | --- |
 | Vendor timeout | You are still on 127.0.0.1. Use a tunnel. |
 | Signature invalid | Wrong secret, or body was modified (pretty-print is display-only; raw body is signed). |
-| Discord endpoint fails | Install `hookyard[discord]`, pass the **public** key, and allow the PING through. |
-| Replay rejected | Target is public. Point at localhost or pass `--allow-remote-replay`. |
-| UI empty | Wrong bin name; click **Open bin**. WS needs same origin. |
-| History gone | In-memory. Expected after restart. |
+| Discord endpoint fails | Install `hookyard[discord]`, pass the **public** key. PINGs without a key are 401 by design. |
+| Replay rejected | Target resolved to a public or metadata IP. Point at localhost or pass `--allow-remote-replay`. |
+| UI 401 | Open `/?token=…` or send `Authorization: Bearer`. |
+| UI empty | Wrong bin name; click **Open bin**. WS needs same origin (and token query if set). |
+| History gone | In-memory. Expected after restart unless `--data-file`. |
+| `body too large` | Payload > 1 MB. |
 
 ## FAQ
 
@@ -230,7 +262,7 @@ app = create_app(secrets={"github": "..."}, allow_remote_replay=False)
 
 ## License — KYAL-1.0
 
-Free to use and modify. **Attribution is mandatory.**
+Free to use and modify. **Attribution is mandatory.** PyPI classifier says “Other/Proprietary” because KYAL is not on the SPDX OSI list; the text is MIT-shaped plus credit.
 
 ```
 Author : Batuhan (KodYazicam)

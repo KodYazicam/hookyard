@@ -56,11 +56,16 @@ class JsonFileStore(MemoryStore):
                 loaded[str(bin_id)] = bucket[: self.limit]
             self._bins = loaded
 
+    def _snapshot(self) -> dict[str, list[RequestRecord]]:
+        with self._lock:
+            return {bin_id: list(records) for bin_id, records in self._bins.items()}
+
     def _save(self) -> None:
+        snapshot = self._snapshot()
         payload = {
             "bins": {
                 bin_id: [record.to_dict() for record in records]
-                for bin_id, records in self._bins.items()
+                for bin_id, records in snapshot.items()
             }
         }
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")

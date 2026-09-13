@@ -17,9 +17,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--slack-secret", default=os.environ.get("HOOKYARD_SLACK_SECRET", ""))
     parser.add_argument("--discord-public-key", default=os.environ.get("HOOKYARD_DISCORD_PUBLIC_KEY", ""))
     parser.add_argument(
+        "--token",
+        default=os.environ.get("HOOKYARD_TOKEN", ""),
+        help="Protect the UI and /api with a bearer token (catch URLs /b/... stay public).",
+    )
+    parser.add_argument(
         "--allow-remote-replay",
         action="store_true",
-        help="Allow replaying captured requests to non-local hosts (SSRF risk).",
+        help="Allow replaying captured requests to public hosts. Metadata IPs stay blocked.",
     )
     parser.add_argument(
         "--data-file",
@@ -55,7 +60,13 @@ def main(argv: list[str] | None = None) -> int:
     from .store import MemoryStore
 
     store = JsonFileStore(args.data_file) if args.data_file else MemoryStore()
-    app = create_app(store=store, secrets=secrets, allow_remote_replay=args.allow_remote_replay)
+    token = args.token or None
+    app = create_app(
+        store=store,
+        secrets=secrets,
+        allow_remote_replay=args.allow_remote_replay,
+        token=token,
+    )
     try:
         import uvicorn
     except ImportError:
@@ -66,8 +77,26 @@ def main(argv: list[str] | None = None) -> int:
     print(f"catch at  http://{args.host}:{args.port}/b/demo")
     if args.data_file:
         print(f"persist   {args.data_file}")
+    if token:
+        print("ui auth   token required (Authorization: Bearer … or ?token=)")
     if args.host not in {"127.0.0.1", "localhost", "::1"}:
-        print("warning: bound on a public interface; replay is still localhost-only unless --allow-remote-replay")
+        print(
+            "warning: bound on a public interface. "
+            "Set --token so the UI cannot be read by the LAN. "
+            "Replay still blocks metadata IPs.",
+            file=sys.stderr,
+        )
+        if not token:
+            print("warning: no --token; anyone who can reach this port can inspect payloads.", file=sys.stderr)
+    if args.discord_public_key:
+        try:
+            import nacl.signing  # noqa: F401
+        except ImportError:
+            print(
+                "warning: Discord public key set but PyNaCl is missing. "
+                "Install hookyard[discord] or PINGs will not verify.",
+                file=sys.stderr,
+            )
     print("built by  KodYazicam  https://github.com/KodYazicam/hookyard")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0

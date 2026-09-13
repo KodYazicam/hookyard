@@ -12,6 +12,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: pytest
       - run: pip install build
       - run: python -m build
       - run: pip install twine

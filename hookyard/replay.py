@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ipaddress
 import json
+import socket
 import urllib.error
 import urllib.request
 from typing import Any
@@ -21,24 +23,65 @@ HOP_BY_HOP = {
     "content-length",
 }
 
-
 BLOCKED_HOSTS = {
     "169.254.169.254",
     "metadata.google.internal",
     "metadata.goog",
+    "metadata.google.internal.",
+    "kubernetes.default",
+    "kubernetes.default.svc",
 }
 
-def _host_allowed(hostname: str, allow_remote: bool) -> bool:
-    host = hostname.lower().rstrip(".")
-    if host in BLOCKED_HOSTS:
+
+def _ip_is_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address, allow_remote: bool) -> bool:
+    if ip.is_unspecified or ip.is_multicast or ip.is_reserved or ip.is_link_local:
+        return True
+    if ip.is_loopback:
         return False
-    if allow_remote:
-        return True
-    if host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}:
-        return True
-    if host.startswith("10.") or host.startswith("192.168.") or host.startswith("172."):
-        return True
-    return False
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:
+        return _ip_is_blocked(mapped, allow_remote)
+    if ip.is_private:
+        return False
+    return not allow_remote
+
+
+def _resolve_ips(hostname: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    infos = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+    ips: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
+    for info in infos:
+        sockaddr = info[4]
+        if not sockaddr:
+            continue
+        ips.append(ipaddress.ip_address(sockaddr[0]))
+    return ips
+
+
+def host_allowed(hostname: str, allow_remote: bool) -> tuple[bool, str]:
+    host = (hostname or "").strip().lower().rstrip(".")
+    if not host:
+        return False, "missing hostname"
+    if host in BLOCKED_HOSTS:
+        return False, "metadata hosts are blocked"
+    if host in {"0.0.0.0", "::", "[::]"}:
+        return False, "unspecified address is blocked"
+    try:
+        ip = ipaddress.ip_address(host.strip("[]"))
+        if _ip_is_blocked(ip, allow_remote):
+            return False, f"blocked address {ip}"
+        return True, ""
+    except ValueError:
+        pass
+    try:
+        ips = _resolve_ips(host)
+    except OSError as error:
+        return False, f"dns failed: {error}"
+    if not ips:
+        return False, "dns returned no addresses"
+    for ip in ips:
+        if _ip_is_blocked(ip, allow_remote):
+            return False, f"{host} resolved to blocked address {ip}"
+    return True, ""
 
 
 def replay(record: RequestRecord, target: str, timeout: float = 10.0, allow_remote: bool = False) -> dict[str, Any]:
@@ -46,12 +89,13 @@ def replay(record: RequestRecord, target: str, timeout: float = 10.0, allow_remo
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return {"ok": False, "status": 0, "headers": {}, "body": "target must be http(s)"}
     hostname = parsed.hostname or ""
-    if not _host_allowed(hostname, allow_remote):
+    allowed, reason = host_allowed(hostname, allow_remote)
+    if not allowed:
         return {
             "ok": False,
             "status": 0,
             "headers": {},
-            "body": "replay is limited to localhost/private hosts (pass allow_remote to override)",
+            "body": reason or "replay is limited to localhost/private hosts (pass allow_remote to override public IPs; metadata stays blocked)",
         }
     headers = {
         k: v
@@ -62,7 +106,7 @@ def replay(record: RequestRecord, target: str, timeout: float = 10.0, allow_remo
     request = urllib.request.Request(target, data=data, method=record.method, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = response.read()[: 64_000]
+            payload = response.read()[:64_000]
             return {
                 "ok": True,
                 "status": response.status,
@@ -70,7 +114,7 @@ def replay(record: RequestRecord, target: str, timeout: float = 10.0, allow_remo
                 "body": payload.decode("utf-8", errors="replace"),
             }
     except urllib.error.HTTPError as error:
-        payload = error.read()[: 64_000]
+        payload = error.read()[:64_000]
         return {
             "ok": False,
             "status": error.code,

@@ -6,6 +6,8 @@ import time
 
 
 def _eq(left: str, right: str) -> bool:
+    if len(left) != len(right):
+        return False
     return hmac.compare_digest(left, right)
 
 
@@ -52,22 +54,18 @@ def verify_slack(body: bytes, timestamp: str | None, signature: str | None, secr
         return False
     if abs(time.time() - ts) > tolerance:
         return False
-    basestring = f"v0:{timestamp}:{body.decode('utf-8')}".encode()
+    basestring = b"v0:" + timestamp.encode("utf-8") + b":" + body
     digest = "v0=" + hmac.new(secret.encode(), basestring, hashlib.sha256).hexdigest()
     return _eq(digest, signature)
 
 
 def verify_discord(body: bytes, signature: str | None, timestamp: str | None, public_key_hex: str) -> bool:
-    """Ed25519 verification without extra deps.
-
-    Returns False when cryptography/nacl is unavailable or the key is invalid.
-    Tests cover the failure path; production installs can add pynacl.
-    """
+    """Ed25519 verification. Returns False when pynacl is missing or the key is invalid."""
     if not signature or not timestamp or not public_key_hex:
         return False
     try:
-        from nacl.signing import VerifyKey  # type: ignore
         from nacl.exceptions import BadSignatureError  # type: ignore
+        from nacl.signing import VerifyKey  # type: ignore
     except ImportError:
         return False
     try:

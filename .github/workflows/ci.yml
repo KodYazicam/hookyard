@@ -18,3 +18,4 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: pip install -e ".[dev]"
       - run: pytest
+      - run: python -c "from hookyard.replay import host_allowed; ok, _ = host_allowed('127.0.0.1', False); assert ok"
