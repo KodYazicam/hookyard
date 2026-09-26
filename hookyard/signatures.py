@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import time
@@ -76,10 +77,24 @@ def verify_discord(body: bytes, signature: str | None, timestamp: str | None, pu
         return False
 
 
+def verify_hmac(body: bytes, signature: str | None, secret: str) -> bool:
+    """Raw HMAC-SHA256 over the body. Accepts a hex or base64 digest of the
+    same MAC, so plain X-Signature services and Shopify-style
+    X-Shopify-Hmac-SHA256 headers both verify."""
+    if not signature or not secret:
+        return False
+    sig = signature.strip()
+    if not sig.isascii():
+        return False
+    digest = hmac.new(secret.encode(), body, hashlib.sha256).digest()
+    return _eq(digest.hex(), sig) or _eq(base64.b64encode(digest).decode(), sig)
+
+
 def inspect_headers(
     body: bytes,
     headers: dict[str, str],
     secrets: dict[str, str],
+    hmac_header: str = "x-signature",
 ) -> dict[str, bool]:
     lower = {k.lower(): v for k, v in headers.items()}
     result: dict[str, bool] = {}
@@ -101,4 +116,6 @@ def inspect_headers(
             lower.get("x-signature-timestamp"),
             secrets["discord"],
         )
+    if "hmac" in secrets:
+        result["hmac"] = verify_hmac(body, lower.get(hmac_header.lower()), secrets["hmac"])
     return result

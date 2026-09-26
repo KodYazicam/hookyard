@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import time
@@ -7,7 +8,7 @@ import time
 from fastapi.testclient import TestClient
 
 from hookyard.app import create_app
-from hookyard.signatures import verify_github, verify_stripe, verify_slack, verify_discord
+from hookyard.signatures import verify_github, verify_stripe, verify_slack, verify_discord, verify_hmac
 from hookyard.persist import JsonFileStore
 from hookyard.store import MemoryStore, new_record
 from hookyard.replay import pretty_json, replay, host_allowed
@@ -46,6 +47,42 @@ def test_slack_signature() -> None:
 
 def test_discord_without_nacl() -> None:
     assert verify_discord(b"{}", "ab", "1", "00") is False
+
+
+def test_hmac_signature_hex_and_base64() -> None:
+    body = b'{"shopify":true}'
+    secret = "shop-shared-secret"
+    digest = hmac.new(secret.encode(), body, hashlib.sha256).digest()
+    assert verify_hmac(body, digest.hex(), secret)
+    assert verify_hmac(body, base64.b64encode(digest).decode(), secret)
+    assert verify_hmac(body, f"  {digest.hex()} ", secret)
+    assert not verify_hmac(body, "deadbeef", secret)
+    assert not verify_hmac(body, None, secret)
+    assert not verify_hmac(body, digest.hex(), "")
+    assert not verify_hmac(body, "é", secret)
+
+
+def test_app_verifies_generic_hmac_with_custom_header() -> None:
+    secret = "shop-shared-secret"
+    body = b'{"id":1}'
+    digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    app = create_app(secrets={"hmac": secret}, hmac_header="x-shopify-hmac-sha256")
+    client = TestClient(app)
+    client.post(
+        "/b/shop",
+        content=body,
+        headers={"content-type": "application/json", "x-shopify-hmac-sha256": digest},
+    )
+    listed = client.get("/api/bins/shop").json()
+    assert listed["requests"][0]["signatures"]["hmac"] is True
+
+    client.post(
+        "/b/shop2",
+        content=body,
+        headers={"content-type": "application/json", "x-shopify-hmac-sha256": "nope"},
+    )
+    listed = client.get("/api/bins/shop2").json()
+    assert listed["requests"][0]["signatures"]["hmac"] is False
 
 
 def test_store_and_pretty() -> None:

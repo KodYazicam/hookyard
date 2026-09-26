@@ -151,8 +151,11 @@ Pass secrets on the CLI or via env. Each captured request gets `signatures: { gi
 | Stripe | `Stripe-Signature` (`t=…,v1=…`, multiple `v1` allowed) | `--stripe-secret` / `HOOKYARD_STRIPE_SECRET` |
 | Slack | `X-Slack-Request-Timestamp` + `X-Slack-Signature` | `--slack-secret` / `HOOKYARD_SLACK_SECRET` |
 | Discord | `X-Signature-Ed25519` + `X-Signature-Timestamp` | `--discord-public-key` / `HOOKYARD_DISCORD_PUBLIC_KEY` (needs `hookyard[discord]`) |
+| Any HMAC-SHA256 service | configurable (default `X-Signature`), hex or base64 digest | `--hmac-secret` / `HOOKYARD_HMAC_SECRET` + `--hmac-header` |
 
 GitHub/Stripe/Slack use HMAC compare (timing-safe, equal-length). Stripe timestamps must be within 300 seconds. Slack signs the **raw bytes**, not a UTF-8 round-trip.
+
+The generic HMAC verifier covers every service that just signs the raw body with HMAC-SHA256 — Shopify (`--hmac-header x-shopify-hmac-sha256`, base64 digest), Contentful, Telegram-style bots, your own services. The digest is accepted as hex **or** base64 of the same MAC.
 
 If you pass a Discord public key but PyNaCl is missing, the CLI warns at startup.
 
@@ -199,6 +202,8 @@ hookyard --host 127.0.0.1 --port 4242 \
 --stripe-secret
 --slack-secret
 --discord-public-key
+--hmac-secret           raw HMAC-SHA256 verification (hex or base64 digest)
+--hmac-header           header that carries it (default x-signature; Shopify: x-shopify-hmac-sha256)
 --allow-remote-replay
 --data-file PATH         persist bins as JSON (or HOOKYARD_DATA_FILE)
 --version

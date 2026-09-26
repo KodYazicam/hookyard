@@ -17,6 +17,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--slack-secret", default=os.environ.get("HOOKYARD_SLACK_SECRET", ""))
     parser.add_argument("--discord-public-key", default=os.environ.get("HOOKYARD_DISCORD_PUBLIC_KEY", ""))
     parser.add_argument(
+        "--hmac-secret",
+        default=os.environ.get("HOOKYARD_HMAC_SECRET", ""),
+        help="Verify a raw HMAC-SHA256 signature (hex or base64) on any service.",
+    )
+    parser.add_argument(
+        "--hmac-header",
+        default=os.environ.get("HOOKYARD_HMAC_HEADER", "x-signature"),
+        help="Header carrying the raw HMAC signature (default: x-signature; Shopify: x-shopify-hmac-sha256).",
+    )
+    parser.add_argument(
         "--token",
         default=os.environ.get("HOOKYARD_TOKEN", ""),
         help="Protect the UI and /api with a bearer token (catch URLs /b/... stay public).",
@@ -51,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
             "stripe": args.stripe_secret,
             "slack": args.slack_secret,
             "discord": args.discord_public_key,
+            "hmac": args.hmac_secret,
         }.items()
         if v
     }
@@ -66,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
         secrets=secrets,
         allow_remote_replay=args.allow_remote_replay,
         token=token,
+        hmac_header=args.hmac_header,
     )
     try:
         import uvicorn

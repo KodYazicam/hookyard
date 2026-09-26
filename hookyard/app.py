@@ -59,6 +59,7 @@ def create_app(
     secrets: dict[str, str] | None = None,
     allow_remote_replay: bool = False,
     token: str | None = None,
+    hmac_header: str = "x-signature",
 ) -> FastAPI:
     store = store or MemoryStore()
     secrets = secrets or {}
@@ -173,7 +174,7 @@ def create_app(
         if len(body) > MAX_BODY:
             return JSONResponse({"error": "body too large"}, status_code=413)
         headers = {k: v for k, v in request.headers.items()}
-        signatures = inspect_headers(body, headers, secrets)
+        signatures = inspect_headers(body, headers, secrets, hmac_header)
         record = new_record(
             bin_id=bin_id,
             method=request.method,
