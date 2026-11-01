@@ -5,18 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2026-11-01
+## [Unreleased]
 
 ### Added
 
-- First public PyPI release: `hookyard`.
 - Local webhook inspector with a browser UI and WebSocket live feed.
 - GitHub, Stripe, Slack, Discord, and generic HMAC-SHA256 verification.
 - SSRF-safe replay with loopback/RFC1918 allow-list and metadata blocking.
 - JSON file persistence, token auth for the UI and API, and Docker support.
 - Read-only `hookyard mcp` server for MCP clients.
 - MCP tools: `health`, `list_bins`, `list_requests`, and `get_request`.
-- Optional `hookyard[mcp]` and `hookyard[discord]` extras.
+- Optional `mcp` and `discord` extras for editable installs.
 
 ### Notes
 

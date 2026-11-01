@@ -19,7 +19,10 @@
 ngrok shows you a tunnel. hookyard shows you the **payload**.
 
 ```bash
-pip install hookyard
+git clone https://github.com/KodYazicam/hookyard.git
+cd hookyard
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
 hookyard --port 4242
 # POST http://127.0.0.1:4242/b/demo
 ```
@@ -51,26 +54,13 @@ Catch URLs (`/b/{bin}`) stay public so vendors can POST. The UI and `/api/*` can
 ## Requirements
 
 - Python **3.10+**
-- Optional: [PyNaCl](https://pypi.org/project/PyNaCl/) for Discord Ed25519 (`pip install "hookyard[discord]"`)
-- Optional: [MCP Python SDK](https://pypi.org/project/mcp/) for the agent server (`pip install "hookyard[mcp]"`)
+- Optional: [PyNaCl](https://pypi.org/project/PyNaCl/) for Discord Ed25519 (`pip install -e ".[discord]"`)
+- Optional: [MCP Python SDK](https://pypi.org/project/mcp/) for the agent server (`pip install -e ".[mcp]"`)
 - Optional: Cloudflare Tunnel / ngrok if a vendor must reach your machine
 
 ## Install
 
-From PyPI:
-
-```bash
-pip install hookyard
-hookyard --help
-```
-
-With the optional MCP server:
-
-```bash
-pip install "hookyard[mcp]"
-```
-
-From source:
+Not on PyPI. Clone and install editable:
 
 ```bash
 git clone https://github.com/KodYazicam/hookyard.git
@@ -80,6 +70,12 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 pytest
 hookyard --help
+```
+
+With the optional MCP server:
+
+```bash
+pip install -e ".[mcp]"
 ```
 
 ## Quick start
@@ -201,7 +197,7 @@ read-only: it can list bins, list requests, and read one request. It cannot
 clear bins, create bins, or replay requests.
 
 ```bash
-pip install "hookyard[mcp]"
+pip install -e ".[mcp]"
 # terminal 1
 hookyard --port 4242 --token "$HOOKYARD_TOKEN"
 # terminal 2 (or your MCP client)
@@ -334,7 +330,7 @@ Full policy: [SECURITY.md](./SECURITY.md).
 
 ## License — KYAL-1.0
 
-Free to use and modify. **Attribution is mandatory.** Not OSI-approved; MIT-shaped plus credit. Install from PyPI with `pip install hookyard`.
+Free to use and modify. **Attribution is mandatory.** Not OSI-approved; MIT-shaped plus credit. Not published to PyPI — clone this repo.
 
 ```
 Author : Batuhan (KodYazicam)
