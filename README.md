@@ -19,10 +19,7 @@
 ngrok shows you a tunnel. hookyard shows you the **payload**.
 
 ```bash
-git clone https://github.com/KodYazicam/hookyard.git
-cd hookyard
-python -m venv .venv && source .venv/bin/activate
-pip install -e .
+pip install hookyard
 hookyard --port 4242
 # POST http://127.0.0.1:4242/b/demo
 ```
@@ -42,6 +39,7 @@ Catch URLs (`/b/{bin}`) stay public so vendors can POST. The UI and `/api/*` can
 - [Signature verification](#signature-verification)
 - [Replay (SSRF-safe)](#replay-ssrf-safe)
 - [Discord Interactions](#discord-interactions)
+- [MCP server for AI agents](#mcp-server-for-ai-agents)
 - [CLI](#cli)
 - [HTTP API](#http-api)
 - [Library](#library)
@@ -53,12 +51,26 @@ Catch URLs (`/b/{bin}`) stay public so vendors can POST. The UI and `/api/*` can
 ## Requirements
 
 - Python **3.10+**
-- Optional: [PyNaCl](https://pypi.org/project/PyNaCl/) for Discord Ed25519 (`pip install -e ".[discord]"` in this clone)
+- Optional: [PyNaCl](https://pypi.org/project/PyNaCl/) for Discord Ed25519 (`pip install "hookyard[discord]"`)
+- Optional: [MCP Python SDK](https://pypi.org/project/mcp/) for the agent server (`pip install "hookyard[mcp]"`)
 - Optional: Cloudflare Tunnel / ngrok if a vendor must reach your machine
 
 ## Install
 
-Not on PyPI. Clone and install editable:
+From PyPI:
+
+```bash
+pip install hookyard
+hookyard --help
+```
+
+With the optional MCP server:
+
+```bash
+pip install "hookyard[mcp]"
+```
+
+From source:
 
 ```bash
 git clone https://github.com/KodYazicam/hookyard.git
@@ -182,6 +194,59 @@ If the JSON body has `"type": 1` (PING), hookyard answers `{ "type": 1 }` **only
 
 Without a key, PING returns `401`. That stops a public bind from being used as a fake Interactions endpoint.
 
+## MCP server for AI agents
+
+`hookyard mcp` exposes a running inspector to MCP clients over stdio. It is
+read-only: it can list bins, list requests, and read one request. It cannot
+clear bins, create bins, or replay requests.
+
+```bash
+pip install "hookyard[mcp]"
+# terminal 1
+hookyard --port 4242 --token "$HOOKYARD_TOKEN"
+# terminal 2 (or your MCP client)
+HOOKYARD_URL=http://127.0.0.1:4242 HOOKYARD_TOKEN="$HOOKYARD_TOKEN" hookyard mcp
+```
+
+| Tool | What it does |
+| --- | --- |
+| `health` | Check the local inspector. |
+| `list_bins` | List bins that have captured webhooks. |
+| `list_requests` | List recent requests without bodies. |
+| `get_request` | Read one request with headers, body, and signature results. |
+
+Example client configuration:
+
+```json
+{
+  "mcpServers": {
+    "hookyard": {
+      "command": "hookyard",
+      "args": ["mcp"],
+      "env": {
+        "HOOKYARD_URL": "http://127.0.0.1:4242",
+        "HOOKYARD_TOKEN": "your-token"
+      }
+    }
+  }
+}
+```
+
+For Claude Code:
+
+```bash
+claude mcp add hookyard \
+  -e HOOKYARD_URL=http://127.0.0.1:4242 \
+  -e HOOKYARD_TOKEN="$HOOKYARD_TOKEN" \
+  -- hookyard mcp
+```
+
+MCP output is local-only and bounded. `Authorization`, `Cookie`, and API-key
+headers are redacted by default; pass `include_sensitive_headers: true` to
+`get_request` when you intentionally need them. Bodies are truncated to 20,000
+characters by default. Captured webhook payloads can contain live secrets —
+review them before sending the output anywhere.
+
 ## CLI
 
 ```bash
@@ -269,7 +334,7 @@ Full policy: [SECURITY.md](./SECURITY.md).
 
 ## License — KYAL-1.0
 
-Free to use and modify. **Attribution is mandatory.** Not OSI-approved; MIT-shaped plus credit. Not published to PyPI — clone this repo.
+Free to use and modify. **Attribution is mandatory.** Not OSI-approved; MIT-shaped plus credit. Install from PyPI with `pip install hookyard`.
 
 ```
 Author : Batuhan (KodYazicam)

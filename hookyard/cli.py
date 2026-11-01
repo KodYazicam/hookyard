@@ -9,6 +9,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="hookyard",
         description="Local webhook inspector. Catch, inspect, verify, replay.",
+        epilog="MCP server: hookyard mcp (install with: pip install \"hookyard[mcp]\")",
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=4242)
@@ -46,6 +47,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw = list(sys.argv[1:] if argv is None else argv)
+    if raw and raw[0] == "mcp":
+        from .mcp import main as mcp_main
+
+        return mcp_main(raw[1:])
+
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.version:
