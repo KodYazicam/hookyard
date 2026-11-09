@@ -10,7 +10,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/python-%3E%3D3.10-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI">
-  <img src="https://img.shields.io/badge/license-KYAL--1.0-7C3AED?style=flat-square" alt="License">
+  <img src="https://img.shields.io/badge/license-Apache--2.0-2ea44f?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/author-KodYazicam-0D0D0D?style=flat-square" alt="Author">
 </p>
 
@@ -49,7 +49,7 @@ Catch URLs (`/b/{bin}`) stay public so vendors can POST. The UI and `/api/*` can
 - [Security](#security)
 - [Troubleshooting](#troubleshooting)
 - [FAQ](#faq)
-- [License](#license--kyal-10)
+- [License](#license)
 
 ## Requirements
 
@@ -328,16 +328,10 @@ Full policy: [SECURITY.md](./SECURITY.md).
 
 **HTTPS?** Terminate TLS on the tunnel / reverse proxy.
 
-## License — KYAL-1.0
+## License
 
-Free to use and modify. **Attribution is mandatory.** Not OSI-approved; MIT-shaped plus credit. Not published to PyPI — clone this repo.
+Apache-2.0. See [LICENSE](./LICENSE).
 
-```
-Author : Batuhan (KodYazicam)
-Project: hookyard
-Source : https://github.com/KodYazicam/hookyard
-```
-
-See [LICENSE](./LICENSE).
+Commercial use, modification, and distribution are permitted under the Apache License 2.0. Keep the license text with distributed copies.
 
 <p align="center"><sub>Built by <a href="https://github.com/KodYazicam">KodYazicam</a></sub></p>
