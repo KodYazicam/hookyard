@@ -11,4 +11,4 @@ pytest
 - Metadata IPs stay blocked even with `--allow-remote-replay`.
 - UI list rows must use `textContent`, not `innerHTML` for method/path.
 - Catch URLs stay unauthenticated; UI/API may require `--token`.
-- Keep KYAL-1.0 attribution.
+- Keep the Apache-2.0 license notice intact.
