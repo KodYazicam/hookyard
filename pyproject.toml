@@ -46,3 +46,4 @@ hookyard = ["templates/*", "static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--cov=hookyard --cov-report=term-missing --cov-fail-under=60"
