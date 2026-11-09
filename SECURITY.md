@@ -5,7 +5,7 @@ hookyard is a **local** webhook inspector. The catch URL `/b/{bin}` is intention
 ## Safe defaults
 
 - Bind: `127.0.0.1`
-- Replay: loopback + RFC1918 only, after **DNS resolution**. `172.16/12` is private; `172.32/8` is not. Link-local and cloud metadata IPs stay blocked even with `--allow-remote-replay`.
+- Replay: loopback + RFC1918 only, after **DNS resolution**. `172.16/12` is private; `172.32/8` is not. Link-local and cloud metadata IPs stay blocked even with `--allow-remote-replay`. Every redirect target is re-validated with the same checks before it is followed.
 - Discord Interactions PING (`type: 1`) is ACKed only when a Discord public key is configured **and** Ed25519 verifies.
 - `hookyard mcp` is stdio-only, read-only, and refuses non-loopback `HOOKYARD_URL` values. It redacts `Authorization`, `Cookie`, and API-key headers by default.
 

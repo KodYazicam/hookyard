@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import socket
 import urllib.error
 import urllib.request
@@ -9,6 +10,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .store import RequestRecord
+
+logger = logging.getLogger(__name__)
 
 HOP_BY_HOP = {
     "connection",
@@ -74,14 +77,31 @@ def host_allowed(hostname: str, allow_remote: bool) -> tuple[bool, str]:
         pass
     try:
         ips = _resolve_ips(host)
-    except OSError as error:
-        return False, f"dns failed: {error}"
+    except OSError:
+        return False, "dns failed"
     if not ips:
         return False, "dns returned no addresses"
     for ip in ips:
         if _ip_is_blocked(ip, allow_remote):
             return False, f"{host} resolved to blocked address {ip}"
     return True, ""
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Re-run the SSRF host checks for every redirect target."""
+
+    def __init__(self, allow_remote: bool) -> None:
+        self.allow_remote = allow_remote
+        super().__init__()
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        parsed = urlparse(newurl)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise urllib.error.URLError("redirect target must be http(s)")
+        allowed, reason = host_allowed(parsed.hostname or "", self.allow_remote)
+        if not allowed:
+            raise urllib.error.URLError(f"redirect blocked: {reason}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def replay(record: RequestRecord, target: str, timeout: float = 10.0, allow_remote: bool = False) -> dict[str, Any]:
@@ -104,8 +124,9 @@ def replay(record: RequestRecord, target: str, timeout: float = 10.0, allow_remo
     }
     data = record.body.encode("utf-8") if record.body else None
     request = urllib.request.Request(target, data=data, method=record.method, headers=headers)
+    opener = urllib.request.build_opener(_SafeRedirectHandler(allow_remote))
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with opener.open(request, timeout=timeout) as response:
             payload = response.read()[:64_000]
             return {
                 "ok": True,
@@ -122,7 +143,8 @@ def replay(record: RequestRecord, target: str, timeout: float = 10.0, allow_remo
             "body": payload.decode("utf-8", errors="replace"),
         }
     except urllib.error.URLError as error:
-        return {"ok": False, "status": 0, "headers": {}, "body": str(error.reason)}
+        logger.warning("replay failed for %s: %s", hostname, error.reason)
+        return {"ok": False, "status": 0, "headers": {}, "body": "replay failed"}
 
 
 def pretty_json(text: str) -> str:
