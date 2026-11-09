@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MCP tools: `health`, `list_bins`, `list_requests`, and `get_request`.
 - Optional `mcp` and `discord` extras for editable installs.
 
+### Security
+
+- Replay now re-validates every redirect target with the SSRF host checks before following it.
+- Replay failures return a generic message instead of exposing internal exception details.
+
 ### Notes
 
 - The MCP server is stdio-only, loopback-only, and never writes to the store.

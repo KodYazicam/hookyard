@@ -3,7 +3,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from fastapi.testclient import TestClient
 
@@ -117,6 +119,30 @@ def test_host_allowed_blocks_public_and_metadata() -> None:
     assert not ok
     ok, _ = host_allowed("8.8.8.8", True)
     assert ok
+
+
+def test_replay_blocks_redirect_to_metadata() -> None:
+    class RedirectToMetadata(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(302)
+            self.send_header("Location", "http://169.254.169.254/latest/meta-data/")
+            self.end_headers()
+
+        def log_message(self, *args: object) -> None:
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), RedirectToMetadata)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        record = new_record("demo", "GET", "/", "", {}, "", "127.0.0.1")
+        result = replay(record, f"http://127.0.0.1:{server.server_port}/redirect")
+        assert result["ok"] is False
+        assert result["status"] == 0
+        assert result["body"] == "replay failed"
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_app_catch_and_api() -> None:
