@@ -10,8 +10,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .openapi import Operation, match_operation, operations
+from .presets import ReplayPreset
 from .replay import pretty_json, replay
-from .signatures import inspect_headers
+from .signatures import inspect_headers, sign_replay
 from .store import MemoryStore, new_record
 
 STATIC = Path(__file__).parent / "static"
@@ -66,6 +67,7 @@ def create_app(
     hmac_header: str = "x-signature",
     openapi_spec: dict[str, Any] | None = None,
     openapi_base_url: str | None = None,
+    replay_presets: list[ReplayPreset] | None = None,
 ) -> FastAPI:
     store = store or MemoryStore()
     secrets = secrets or {}
@@ -73,12 +75,14 @@ def create_app(
     openapi_operations: list[Operation] = (
         operations(openapi_spec, openapi_base_url) if openapi_spec else []
     )
+    presets = {preset.name: preset for preset in (replay_presets or [])}
     app = FastAPI(title="hookyard", docs_url=None, redoc_url=None)
     app.state.store = store
     app.state.secrets = secrets
     app.state.hub = hub
     app.state.token = token
     app.state.openapi_operations = openapi_operations
+    app.state.replay_presets = presets
 
     if STATIC.exists():
         app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -126,6 +130,10 @@ def create_app(
     @app.get("/api/bins")
     async def list_bins() -> dict[str, list[str]]:
         return {"bins": store.bins()}
+
+    @app.get("/api/presets")
+    async def list_presets() -> dict[str, list[dict[str, str | None]]]:
+        return {"presets": [preset.to_dict() for preset in presets.values()]}
 
     @app.get("/api/bins/{bin_id}")
     async def list_requests(
@@ -194,9 +202,41 @@ def create_app(
         if not record:
             return JSONResponse({"error": "not found"}, status_code=404)
         target = payload.get("target")
+        preset_name = payload.get("preset")
+        preset: ReplayPreset | None = None
+        extra_headers: dict[str, str] | None = None
+        if preset_name is not None:
+            if target:
+                return JSONResponse(
+                    {"error": "send target or preset, not both"},
+                    status_code=400,
+                )
+            if not isinstance(preset_name, str) or preset_name not in presets:
+                return JSONResponse({"error": "unknown preset"}, status_code=400)
+            preset = presets[preset_name]
+            target = preset.target
+            if preset.sign:
+                try:
+                    extra_headers = sign_replay(
+                        preset.sign,
+                        record.body.encode("utf-8"),
+                        secrets.get(preset.sign, ""),
+                        hmac_header,
+                    )
+                except ValueError as error:
+                    return JSONResponse({"error": str(error)}, status_code=400)
         if not target:
             return JSONResponse({"error": "target required"}, status_code=400)
-        return JSONResponse(replay(record, target, allow_remote=allow_remote_replay))
+        result = replay(
+            record,
+            target,
+            allow_remote=allow_remote_replay,
+            extra_headers=extra_headers,
+        )
+        if preset is not None:
+            result["preset"] = preset.name
+            result["signed"] = preset.sign
+        return JSONResponse(result)
 
     @app.websocket("/ws")
     async def ws_feed(ws: WebSocket) -> None:

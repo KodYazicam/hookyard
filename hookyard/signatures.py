@@ -90,6 +90,66 @@ def verify_hmac(body: bytes, signature: str | None, secret: str) -> bool:
     return _eq(digest.hex(), sig) or _eq(base64.b64encode(digest).decode(), sig)
 
 
+SIGN_PROVIDERS = {"github", "stripe", "slack", "hmac"}
+_MISSING_SECRET = {
+    "github": "github secret is not configured; pass --github-secret or HOOKYARD_GITHUB_SECRET",
+    "stripe": "stripe secret is not configured; pass --stripe-secret or HOOKYARD_STRIPE_SECRET",
+    "slack": "slack secret is not configured; pass --slack-secret or HOOKYARD_SLACK_SECRET",
+    "hmac": "hmac secret is not configured; pass --hmac-secret or HOOKYARD_HMAC_SECRET",
+}
+
+
+def sign_github(body: bytes, secret: str, timestamp: float | None = None) -> dict[str, str]:
+    if not secret:
+        raise ValueError(_MISSING_SECRET["github"])
+    digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return {"X-Hub-Signature-256": f"sha256={digest}"}
+
+
+def sign_stripe(body: bytes, secret: str, timestamp: float | None = None) -> dict[str, str]:
+    if not secret:
+        raise ValueError(_MISSING_SECRET["stripe"])
+    ts = str(int(timestamp if timestamp is not None else time.time()))
+    digest = hmac.new(
+        secret.encode(), f"{ts}.".encode() + body, hashlib.sha256
+    ).hexdigest()
+    return {"Stripe-Signature": f"t={ts},v1={digest}"}
+
+
+def sign_slack(body: bytes, secret: str, timestamp: float | None = None) -> dict[str, str]:
+    if not secret:
+        raise ValueError(_MISSING_SECRET["slack"])
+    ts = str(int(timestamp if timestamp is not None else time.time()))
+    basestring = b"v0:" + ts.encode() + b":" + body
+    digest = "v0=" + hmac.new(secret.encode(), basestring, hashlib.sha256).hexdigest()
+    return {"X-Slack-Request-Timestamp": ts, "X-Slack-Signature": digest}
+
+
+def sign_hmac(body: bytes, secret: str, header: str = "x-signature") -> dict[str, str]:
+    if not secret:
+        raise ValueError(_MISSING_SECRET["hmac"])
+    digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return {header: digest}
+
+
+def sign_replay(
+    provider: str,
+    body: bytes,
+    secret: str,
+    hmac_header: str = "x-signature",
+) -> dict[str, str]:
+    """Return fresh signature headers for a replay preset."""
+    if provider == "github":
+        return sign_github(body, secret)
+    if provider == "stripe":
+        return sign_stripe(body, secret)
+    if provider == "slack":
+        return sign_slack(body, secret)
+    if provider == "hmac":
+        return sign_hmac(body, secret, hmac_header)
+    raise ValueError(f"unsupported sign provider {provider!r}")
+
+
 def inspect_headers(
     body: bytes,
     headers: dict[str, str],
