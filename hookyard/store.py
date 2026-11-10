@@ -57,9 +57,29 @@ class MemoryStore:
             listener(record)
         return record
 
-    def list(self, bin_id: str, limit: int = 100) -> list[RequestRecord]:
+    def list(
+        self,
+        bin_id: str,
+        limit: int = 100,
+        q: str | None = None,
+        method: str | None = None,
+    ) -> list[RequestRecord]:
+        needle = q.casefold() if q else ""
+        method_filter = method.upper() if method else ""
         with self._lock:
-            return list(self._bins.get(bin_id, []))[:limit]
+            items = self._bins.get(bin_id, [])
+            if not needle and not method_filter:
+                return list(items)[:limit]
+            found: list[RequestRecord] = []
+            for item in items:
+                if method_filter and item.method.upper() != method_filter:
+                    continue
+                if needle and not _matches(item, needle):
+                    continue
+                found.append(item)
+                if len(found) >= limit:
+                    break
+            return found
 
     def get(self, bin_id: str, request_id: str) -> RequestRecord | None:
         with self._lock:
@@ -82,6 +102,15 @@ class MemoryStore:
                 self._listeners.remove(listener)
 
         return unsub
+
+
+def _matches(record: RequestRecord, needle: str) -> bool:
+    if needle in record.path.casefold() or needle in record.body.casefold():
+        return True
+    return any(
+        needle in f"{key}: {value}".casefold()
+        for key, value in record.headers.items()
+    )
 
 
 def new_record(

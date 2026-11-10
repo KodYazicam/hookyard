@@ -21,6 +21,20 @@
   <main>
     <aside>
       <p class="hint">POST to <code id="url"></code></p>
+      <div class="filters">
+        <input id="search" type="search" placeholder="Search path, body, headers" spellcheck="false" aria-label="Search requests">
+        <select id="method" aria-label="Filter by HTTP method">
+          <option value="">All methods</option>
+          <option>GET</option>
+          <option>POST</option>
+          <option>PUT</option>
+          <option>PATCH</option>
+          <option>DELETE</option>
+          <option>HEAD</option>
+          <option>OPTIONS</option>
+        </select>
+      </div>
+      <p id="empty" class="empty" hidden></p>
       <ul id="list"></ul>
     </aside>
     <section id="detail">

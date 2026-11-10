@@ -8,7 +8,7 @@ Small, shippable steps. Upvote or comment on an issue if you want something move
 - [x] GitHub, Stripe, Slack, Discord, and generic HMAC verification
 - [x] SSRF-safe replay and Docker image
 - [ ] Publish to PyPI
-- [ ] Search and filter captured requests
+- [x] Search and filter captured requests
 
 ## Next
 

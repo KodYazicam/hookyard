@@ -167,6 +167,77 @@ def test_app_catch_and_api() -> None:
     assert client.get("/").status_code == 200
 
 
+def test_store_filters_before_limit() -> None:
+    store = MemoryStore(limit=10)
+    bin_id = store.create_bin("demo")
+    store.add(new_record(bin_id, "GET", "/special", "", {"x-tag": "needle"}, "", "127.0.0.1"))
+    for i in range(5):
+        store.add(new_record(bin_id, "POST", f"/hook/{i}", "", {}, f'{{"n":{i}}}', "127.0.0.1"))
+    rows = store.list(bin_id, limit=1, q="needle")
+    assert len(rows) == 1
+    assert rows[0].path == "/special"
+    assert store.list(bin_id, limit=1, method="post")[0].path == "/hook/4"
+    assert store.list(bin_id, q="NEEDLE")[0].path == "/special"
+
+
+def test_api_search_and_method_filters() -> None:
+    client = TestClient(create_app())
+    client.post(
+        "/b/filters/hooks/stripe",
+        content=b'{"event":"payment.succeeded"}',
+        headers={"content-type": "application/json", "x-provider": "stripe"},
+    )
+    client.post(
+        "/b/filters/other",
+        content=b'{"event":"refund.created"}',
+        headers={"content-type": "application/json", "x-provider": "shopify"},
+    )
+    client.get("/b/filters/health")
+
+    all_rows = client.get("/api/bins/filters").json()["requests"]
+    assert len(all_rows) == 3
+
+    rows = client.get("/api/bins/filters", params={"q": "STRIPE"}).json()["requests"]
+    assert [r["path"] for r in rows] == ["/hooks/stripe"]
+
+    rows = client.get("/api/bins/filters", params={"q": "refund"}).json()["requests"]
+    assert len(rows) == 1
+    assert "refund" in rows[0]["body"]
+
+    rows = client.get("/api/bins/filters", params={"q": "x-provider: shopify"}).json()["requests"]
+    assert len(rows) == 1
+    assert rows[0]["headers"]["x-provider"] == "shopify"
+
+    rows = client.get("/api/bins/filters", params={"q": "X-PROVIDER"}).json()["requests"]
+    assert len(rows) == 2
+
+    rows = client.get("/api/bins/filters", params={"method": "get"}).json()["requests"]
+    assert [r["method"] for r in rows] == ["GET"]
+
+    rows = client.get("/api/bins/filters", params={"method": "POST", "q": "payment"}).json()["requests"]
+    assert len(rows) == 1
+    assert rows[0]["path"] == "/hooks/stripe"
+
+    assert client.get("/api/bins/filters", params={"q": "zzz-none"}).json()["requests"] == []
+
+
+def test_api_rejects_invalid_method_filter() -> None:
+    client = TestClient(create_app())
+    res = client.get("/api/bins/demo", params={"method": "GET POST"})
+    assert res.status_code == 400
+    assert "method" in res.json()["error"]
+
+
+def test_api_limit_filter() -> None:
+    client = TestClient(create_app())
+    for i in range(5):
+        client.post("/b/limited", content=f'{{"n":{i}}}'.encode())
+    assert len(client.get("/api/bins/limited").json()["requests"]) == 5
+    assert len(client.get("/api/bins/limited", params={"limit": 2}).json()["requests"]) == 2
+    assert client.get("/api/bins/limited", params={"limit": "x"}).status_code == 400
+    assert client.get("/api/bins/limited", params={"limit": 0}).status_code == 400
+
+
 def test_token_protects_ui_not_catch() -> None:
     app = create_app(token="s3cret")
     client = TestClient(app)

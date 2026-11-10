@@ -16,7 +16,10 @@ from .store import MemoryStore, new_record
 STATIC = Path(__file__).parent / "static"
 TEMPLATES = Path(__file__).parent / "templates"
 BIN_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+HTTP_METHOD_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,32}$")
 MAX_BODY = 1_000_000
+DEFAULT_LIMIT = 100
+MAX_LIMIT = 500
 
 
 class Hub:
@@ -118,8 +121,36 @@ def create_app(
         return {"bins": store.bins()}
 
     @app.get("/api/bins/{bin_id}")
-    async def list_requests(bin_id: str) -> dict[str, Any]:
-        return {"bin": bin_id, "requests": [r.to_dict() for r in store.list(bin_id)]}
+    async def list_requests(
+        bin_id: str,
+        q: str | None = None,
+        method: str | None = None,
+        limit: str | None = None,
+    ) -> Response:
+        query_text = (q or "").strip()
+        method_filter = (method or "").strip().upper()
+        if method_filter and not HTTP_METHOD_RE.match(method_filter):
+            return JSONResponse(
+                {"error": "method must be a valid HTTP method token"},
+                status_code=400,
+            )
+        if limit is None:
+            max_items = DEFAULT_LIMIT
+        else:
+            try:
+                max_items = int(limit)
+            except ValueError:
+                return JSONResponse({"error": "limit must be an integer"}, status_code=400)
+            if max_items < 1:
+                return JSONResponse({"error": "limit must be >= 1"}, status_code=400)
+        max_items = min(max_items, store.limit, MAX_LIMIT)
+        records = store.list(
+            bin_id,
+            limit=max_items,
+            q=query_text or None,
+            method=method_filter or None,
+        )
+        return {"bin": bin_id, "requests": [r.to_dict() for r in records]}
 
     @app.delete("/api/bins/{bin_id}")
     async def clear_bin(bin_id: str) -> dict[str, int]:

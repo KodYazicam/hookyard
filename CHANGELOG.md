@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Local webhook inspector with a browser UI and WebSocket live feed.
+- Search and method filters on `GET /api/bins/{id}`, with a debounced search
+  box, method picker, and empty state in the UI.
 - GitHub, Stripe, Slack, Discord, and generic HMAC-SHA256 verification.
 - SSRF-safe replay with loopback/RFC1918 allow-list and metadata blocking.
 - JSON file persistence, token auth for the UI and API, and Docker support.
