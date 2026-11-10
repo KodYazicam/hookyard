@@ -86,6 +86,7 @@ function renderList(items) {
 }
 
 async function show(id) {
+  selectedId = id;
   const res = await fetch(`/api/bins/${encodeURIComponent(binId())}/${encodeURIComponent(id)}`, {
     headers: authHeaders(),
   });
@@ -109,6 +110,7 @@ async function show(id) {
       <input id="target" placeholder="http://127.0.0.1:3000/webhook" style="flex:1">
       <button id="replay">Replay</button>
     </div>
+    <p id="openapi-note" class="hint"></p>
     <pre id="replay-out"></pre>
   `;
   detailEl.querySelector("h2").textContent = `${item.method} ${item.path}`;
@@ -124,6 +126,28 @@ async function show(id) {
     });
     document.getElementById("replay-out").textContent = JSON.stringify(await out.json(), null, 2);
   };
+  suggestOpenApi(id);
+}
+
+async function suggestOpenApi(id) {
+  let data;
+  try {
+    const res = await fetch(
+      `/api/bins/${encodeURIComponent(binId())}/${encodeURIComponent(id)}/openapi`,
+      { headers: authHeaders() },
+    );
+    if (!res.ok) return;
+    data = await res.json();
+  } catch {
+    return;
+  }
+  if (selectedId !== id || !data.matched) return;
+  const targetEl = document.getElementById("target");
+  const noteEl = document.getElementById("openapi-note");
+  if (!targetEl || !noteEl) return;
+  const op = data.operation || {};
+  noteEl.textContent = `OpenAPI: ${op.operation_id || `${op.method} ${op.path}`}`;
+  if (!targetEl.value && data.target) targetEl.value = data.target;
 }
 
 function escapeHtml(value) {

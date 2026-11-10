@@ -41,6 +41,7 @@ Catch URLs (`/b/{bin}`) stay public so vendors can POST. The UI and `/api/*` can
 - [Expose it to the internet](#expose-it-to-the-internet)
 - [Signature verification](#signature-verification)
 - [Replay (SSRF-safe)](#replay-ssrf-safe)
+- [OpenAPI replay targets](#openapi-replay-targets)
 - [Discord Interactions](#discord-interactions)
 - [MCP server for AI agents](#mcp-server-for-ai-agents)
 - [CLI](#cli)
@@ -181,6 +182,24 @@ hookyard **resolves DNS** and checks every address:
 
 `--allow-remote-replay` only unlocks public unicast IPs. Hop-by-hop headers (`Host`, `Content-Length`, `Connection`, …) are stripped.
 
+## OpenAPI replay targets
+
+If your receiving service has an OpenAPI 3 **JSON** document, hookyard can match a captured `method` + `path` to an operation and suggest the replay URL:
+
+```bash
+hookyard --openapi ./openapi.json
+# spec servers point at production? override suggestions for your local service:
+hookyard --openapi ./openapi.json --openapi-base-url http://127.0.0.1:3000
+```
+
+The UI pre-fills the replay target for a matching request and shows the operation id. `GET /api/bins/{id}/{req}/openapi` returns the same data for scripts.
+
+- OpenAPI **3.0 and 3.1, JSON only** for now; YAML is not parsed.
+- Server precedence: operation → path → root document. Relative server URLs need `--openapi-base-url`.
+- `{param}` placeholders use path-parameter examples, defaults, or enums and are URL-encoded. Unknown placeholders stay as `{param}` for you to fill.
+- Example bodies come from `example`/`examples`, or are generated from the schema with local `$ref`s resolved.
+- This only suggests a URL. Replay still runs the SSRF checks above.
+
 ## Discord Interactions
 
 If the JSON body has `"type": 1` (PING), hookyard answers `{ "type": 1 }` **only when**:
@@ -267,6 +286,8 @@ hookyard --host 127.0.0.1 --port 4242 \
 --hmac-header           header that carries it (default x-signature; Shopify: x-shopify-hmac-sha256)
 --allow-remote-replay
 --data-file PATH         persist bins as JSON (or HOOKYARD_DATA_FILE)
+--openapi PATH           OpenAPI 3 JSON spec for replay target suggestions (or HOOKYARD_OPENAPI)
+--openapi-base-url URL   override spec servers, e.g. http://127.0.0.1:3000 (or HOOKYARD_OPENAPI_BASE_URL)
 --version
 ```
 
@@ -278,6 +299,7 @@ hookyard --host 127.0.0.1 --port 4242 \
 | GET | `/api/bins` | list bin ids |
 | GET | `/api/bins/{id}` | recent requests; optional `q`, `method`, and `limit` filters |
 | GET | `/api/bins/{id}/{req}` | one request + `pretty` JSON |
+| GET | `/api/bins/{id}/{req}/openapi` | matched OpenAPI operation + suggested replay target |
 | DELETE | `/api/bins/{id}` | clear |
 | POST | `/api/bins/{id}/{req}/replay` | `{ "target": "http://127.0.0.1:3000/x" }` |
 | WS | `/ws` | `{ "type": "request", "record": {…} }` |

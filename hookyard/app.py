@@ -9,6 +9,7 @@ from fastapi import Body, FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from .openapi import Operation, match_operation, operations
 from .replay import pretty_json, replay
 from .signatures import inspect_headers
 from .store import MemoryStore, new_record
@@ -63,15 +64,21 @@ def create_app(
     allow_remote_replay: bool = False,
     token: str | None = None,
     hmac_header: str = "x-signature",
+    openapi_spec: dict[str, Any] | None = None,
+    openapi_base_url: str | None = None,
 ) -> FastAPI:
     store = store or MemoryStore()
     secrets = secrets or {}
     hub = Hub()
+    openapi_operations: list[Operation] = (
+        operations(openapi_spec, openapi_base_url) if openapi_spec else []
+    )
     app = FastAPI(title="hookyard", docs_url=None, redoc_url=None)
     app.state.store = store
     app.state.secrets = secrets
     app.state.hub = hub
     app.state.token = token
+    app.state.openapi_operations = openapi_operations
 
     if STATIC.exists():
         app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -164,6 +171,22 @@ def create_app(
         data = record.to_dict()
         data["pretty"] = pretty_json(record.body)
         return JSONResponse(data)
+
+    @app.get("/api/bins/{bin_id}/{request_id}/openapi")
+    async def openapi_match(bin_id: str, request_id: str) -> Response:
+        record = store.get(bin_id, request_id)
+        if not record:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        if not openapi_operations:
+            return {"matched": False, "reason": "no OpenAPI spec loaded"}
+        operation = match_operation(openapi_operations, record.method, record.path)
+        if operation is None:
+            return {"matched": False, "reason": "no matching operation"}
+        return {
+            "matched": True,
+            "operation": operation.to_dict(),
+            "target": operation.target,
+        }
 
     @app.post("/api/bins/{bin_id}/{request_id}/replay")
     async def replay_request(bin_id: str, request_id: str, payload: dict[str, Any]) -> Response:
