@@ -9,10 +9,10 @@ Small, shippable steps. Upvote or comment on an issue if you want something move
 - [x] SSRF-safe replay and Docker image
 - [ ] Publish to PyPI
 - [x] Search and filter captured requests
+- [x] OpenAPI import for replay payloads
 
 ## Next
 
-- [ ] OpenAPI import for replay payloads
 - [ ] Signed replay presets
 - [ ] More MCP tools (list, inspect, replay)
 - [ ] `kodyaz` umbrella CLI
