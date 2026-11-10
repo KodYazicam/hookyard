@@ -276,11 +276,19 @@ hookyard --host 127.0.0.1 --port 4242 \
 | --- | --- | --- |
 | POST | `/api/bins` | `{ "id": "demo" }` optional; random id if omitted |
 | GET | `/api/bins` | list bin ids |
-| GET | `/api/bins/{id}` | recent requests |
+| GET | `/api/bins/{id}` | recent requests; optional `q`, `method`, and `limit` filters |
 | GET | `/api/bins/{id}/{req}` | one request + `pretty` JSON |
 | DELETE | `/api/bins/{id}` | clear |
 | POST | `/api/bins/{id}/{req}/replay` | `{ "target": "http://127.0.0.1:3000/x" }` |
 | WS | `/ws` | `{ "type": "request", "record": {…} }` |
+
+`GET /api/bins/{id}` filters are applied newest-first before the limit:
+
+- `q` — case-insensitive substring match on path, body, or headers.
+- `method` — case-insensitive HTTP method; invalid method tokens return `400`.
+- `limit` — `1`–`500`, default `100`.
+
+Without query parameters the response shape is unchanged.
 
 ## Library
 

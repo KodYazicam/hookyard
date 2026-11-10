@@ -17,7 +17,7 @@ header {
 h1 { margin: 0; font-size: 20px; letter-spacing: 0.04em; }
 header p { margin: 2px 0 0; color: var(--muted); }
 .row { display: flex; gap: 8px; }
-input, button {
+input, button, select {
   background: var(--panel); color: var(--text); border: 1px solid var(--line);
   border-radius: 8px; padding: 8px 12px; font: inherit;
 }
@@ -26,6 +26,9 @@ button.ghost { background: transparent; color: var(--text); border: 1px solid va
 main { display: grid; grid-template-columns: 320px 1fr; height: calc(100% - 74px); }
 aside { border-right: 1px solid var(--line); overflow: auto; padding: 12px; }
 .hint { color: var(--muted); font-size: 12px; }
+.filters { display: flex; gap: 8px; margin-bottom: 12px; }
+.filters input { flex: 1; min-width: 0; }
+.filters select { flex: 0 0 auto; padding: 8px 10px; }
 code { color: var(--accent); }
 ul { list-style: none; padding: 0; margin: 0; }
 li {

@@ -2,6 +2,13 @@ const listEl = document.getElementById("list");
 const detailEl = document.getElementById("detail");
 const binEl = document.getElementById("bin");
 const urlEl = document.getElementById("url");
+const searchEl = document.getElementById("search");
+const methodEl = document.getElementById("method");
+const emptyEl = document.getElementById("empty");
+
+let selectedId = null;
+let searchTimer = 0;
+let loadSeq = 0;
 
 function binId() {
   return binEl.value.trim() || "demo";
@@ -25,14 +32,28 @@ function refreshUrl() {
   urlEl.textContent = `${location.origin}/b/${binId()}`;
 }
 
+function filterQuery() {
+  const params = new URLSearchParams();
+  const q = searchEl.value.trim();
+  if (q) params.set("q", q);
+  if (methodEl.value) params.set("method", methodEl.value);
+  const suffix = params.toString();
+  return suffix ? `?${suffix}` : "";
+}
+
 async function loadBin() {
   refreshUrl();
+  const seq = ++loadSeq;
   await fetch("/api/bins", {
     method: "POST",
     headers: { "content-type": "application/json", ...authHeaders() },
     body: JSON.stringify({ id: binId() }),
   });
-  const res = await fetch(`/api/bins/${encodeURIComponent(binId())}`, { headers: authHeaders() });
+  const res = await fetch(
+    `/api/bins/${encodeURIComponent(binId())}${filterQuery()}`,
+    { headers: authHeaders() },
+  );
+  if (seq !== loadSeq) return;
   const data = await res.json();
   renderList(data.requests || []);
 }
@@ -49,9 +70,19 @@ function renderList(items) {
     meta.className = "meta";
     meta.textContent = new Date(item.created_at * 1000).toLocaleTimeString();
     li.append(method, path, meta);
-    li.onclick = () => show(item.id);
+    if (item.id === selectedId) li.classList.add("active");
+    li.onclick = () => {
+      selectedId = item.id;
+      for (const row of listEl.children) row.classList.toggle("active", row === li);
+      show(item.id);
+    };
     listEl.appendChild(li);
   }
+  const filtering = Boolean(searchEl.value.trim() || methodEl.value);
+  emptyEl.hidden = items.length > 0;
+  emptyEl.textContent = filtering
+    ? "No requests match your filters."
+    : "No requests yet. POST a webhook to the catch URL.";
 }
 
 async function show(id) {
@@ -105,11 +136,22 @@ function escapeHtml(value) {
   }[c]));
 }
 
-document.getElementById("create").onclick = loadBin;
+document.getElementById("create").onclick = () => {
+  selectedId = null;
+  loadBin();
+};
 document.getElementById("clear").onclick = async () => {
   await fetch(`/api/bins/${encodeURIComponent(binId())}`, { method: "DELETE", headers: authHeaders() });
+  selectedId = null;
+  detailEl.innerHTML = '<p class="empty">Waiting for webhooks…</p>';
   await loadBin();
 };
+
+searchEl.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(loadBin, 200);
+});
+methodEl.addEventListener("change", loadBin);
 
 const ws = new WebSocket(wsUrl());
 ws.onmessage = (ev) => {
