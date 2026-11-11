@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import tomllib
 from pathlib import Path
 
 import pytest
@@ -138,5 +137,5 @@ def test_openapi_bad_spec(
 
 def test_console_script_entry() -> None:
     root = Path(__file__).resolve().parents[1]
-    doc = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-    assert doc["project"]["scripts"]["kodyaz"] == "hookyard.umbrella:main"
+    text = (root / "pyproject.toml").read_text(encoding="utf-8")
+    assert 'kodyaz = "hookyard.umbrella:main"' in text
