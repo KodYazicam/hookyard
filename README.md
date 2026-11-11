@@ -43,6 +43,7 @@ Catch URLs (`/b/{bin}`) stay public so vendors can POST. The UI and `/api/*` can
 - [Replay (SSRF-safe)](#replay-ssrf-safe)
 - [OpenAPI replay targets](#openapi-replay-targets)
 - [Signed replay presets](#signed-replay-presets)
+- [Request diffing](#request-diffing)
 - [Discord Interactions](#discord-interactions)
 - [MCP server for AI agents](#mcp-server-for-ai-agents)
 - [CLI](#cli)
@@ -228,6 +229,21 @@ hookyard --stripe-secret "$STRIPE_WHSEC" --replay-presets ./presets.json
 - `GET /api/presets` lists names, targets, and providers without secrets.
 - Discord is not supported: hookyard only has the public key, so it cannot sign.
 
+## Request diffing
+
+Compare two captured requests in the same bin:
+
+```bash
+curl -s "http://127.0.0.1:4242/api/bins/demo/diff?left=ID1&right=ID2" \
+  | python -m json.tool
+```
+
+The response summarizes both requests and reports changed scalar fields,
+header additions/removals/changes (names are case-insensitive), and a unified
+body diff. JSON bodies are pretty-printed before diffing. The detail pane has a
+"Compare with…" picker that uses the same endpoint. Diffs are read-only and
+never cross bins.
+
 ## Discord Interactions
 
 If the JSON body has `"type": 1` (PING), hookyard answers `{ "type": 1 }` **only when**:
@@ -352,6 +368,7 @@ kodyaz openapi ./openapi.json --json > operations.json
 | GET | `/api/bins/{id}` | recent requests; optional `q`, `method`, and `limit` filters |
 | GET | `/api/bins/{id}/{req}` | one request + `pretty` JSON |
 | GET | `/api/bins/{id}/{req}/openapi` | matched OpenAPI operation + suggested replay target |
+| GET | `/api/bins/{id}/diff?left={req}&right={req}` | read-only diff of two requests in the bin |
 | DELETE | `/api/bins/{id}` | clear |
 | POST | `/api/bins/{id}/{req}/replay` | `{ "target": "http://127.0.0.1:3000/x" }` or `{ "preset": "local-stripe" }` |
 | WS | `/ws` | `{ "type": "request", "record": {…} }` |

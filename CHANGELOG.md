@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `list_requests`, and opt-in `replay_request` via
   `HOOKYARD_MCP_ALLOW_REPLAY=1`.
 - `kodyaz` umbrella CLI with `hookyard`, `mcp`, and `openapi` subcommands.
+- Request diffing via `GET /api/bins/{id}/diff?left=…&right=…` and a compare
+  picker in the detail pane (header and unified body diffs).
 - GitHub, Stripe, Slack, Discord, and generic HMAC-SHA256 verification.
 - SSRF-safe replay with loopback/RFC1918 allow-list and metadata blocking.
 - JSON file persistence, token auth for the UI and API, and Docker support.

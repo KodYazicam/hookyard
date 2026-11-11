@@ -13,10 +13,7 @@ Small, shippable steps. Upvote or comment on an issue if you want something move
 - [x] Signed replay presets
 - [x] More MCP tools (list, inspect, replay)
 - [x] `kodyaz` umbrella CLI
-
-## Next
-
-- [ ] Request diffing
+- [x] Request diffing
 
 ## Later
 
