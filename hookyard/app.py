@@ -9,6 +9,7 @@ from fastapi import Body, FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from .diff import diff_requests
 from .openapi import Operation, match_operation, operations
 from .presets import ReplayPreset
 from .replay import pretty_json, replay
@@ -170,6 +171,23 @@ def create_app(
     @app.delete("/api/bins/{bin_id}")
     async def clear_bin(bin_id: str) -> dict[str, int]:
         return {"cleared": store.clear(bin_id)}
+
+    @app.get("/api/bins/{bin_id}/diff")
+    async def diff_bin_requests(
+        bin_id: str,
+        left: str | None = None,
+        right: str | None = None,
+    ) -> Response:
+        if not left or not right:
+            return JSONResponse(
+                {"error": "left and right request ids are required"},
+                status_code=400,
+            )
+        left_record = store.get(bin_id, left)
+        right_record = store.get(bin_id, right)
+        if not left_record or not right_record:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return {"bin": bin_id, **diff_requests(left_record, right_record)}
 
     @app.get("/api/bins/{bin_id}/{request_id}")
     async def get_request(bin_id: str, request_id: str) -> Response:

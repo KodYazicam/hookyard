@@ -9,6 +9,7 @@ const emptyEl = document.getElementById("empty");
 let selectedId = null;
 let selectedPreset = null;
 let presets = [];
+let currentItems = [];
 let searchTimer = 0;
 let loadSeq = 0;
 
@@ -61,6 +62,7 @@ async function loadBin() {
 }
 
 function renderList(items) {
+  currentItems = items;
   listEl.replaceChildren();
   for (const item of items) {
     const li = document.createElement("li");
@@ -104,6 +106,12 @@ async function show(id) {
     <h2></h2>
     <p class="meta"></p>
     <div class="sigs">${sigs}</div>
+    <h3>Compare</h3>
+    <div class="row">
+      <select id="diff-target" aria-label="Compare with request" style="flex:1"></select>
+      <button id="diff" class="ghost">Diff</button>
+    </div>
+    <pre id="diff-out"></pre>
     <h3>Headers</h3>
     <pre class="headers"></pre>
     <h3>Body</h3>
@@ -126,6 +134,7 @@ async function show(id) {
   detailEl.querySelector(".headers").textContent = headers;
   detailEl.querySelector(".body").textContent = item.pretty || item.body || "";
   renderPresets();
+  renderDiffOptions(id);
   document.getElementById("replay").onclick = async () => {
     const target = document.getElementById("target").value;
     const body = selectedPreset ? { preset: selectedPreset } : { target };
@@ -177,6 +186,35 @@ async function loadPresets() {
   } catch {
     presets = [];
   }
+}
+
+function renderDiffOptions(id) {
+  const select = document.getElementById("diff-target");
+  const button = document.getElementById("diff");
+  if (!select || !button) return;
+  for (const item of currentItems) {
+    if (item.id === id) continue;
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = `${item.method} ${item.path} · ${new Date(item.created_at * 1000).toLocaleTimeString()}`;
+    select.appendChild(option);
+  }
+  button.disabled = select.options.length === 0;
+  if (select.options.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No other requests to compare";
+    select.appendChild(option);
+  }
+  button.onclick = async () => {
+    if (!select.value) return;
+    const out = document.getElementById("diff-out");
+    const res = await fetch(
+      `/api/bins/${encodeURIComponent(binId())}/diff?left=${encodeURIComponent(id)}&right=${encodeURIComponent(select.value)}`,
+      { headers: authHeaders() },
+    );
+    out.textContent = JSON.stringify(await res.json(), null, 2);
+  };
 }
 
 async function suggestOpenApi(id) {

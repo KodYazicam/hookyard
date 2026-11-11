@@ -23,6 +23,7 @@ input, button, select {
 }
 button { background: var(--accent); color: #0d0d12; font-weight: 700; cursor: pointer; border: 0; }
 button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
 main { display: grid; grid-template-columns: 320px 1fr; height: calc(100% - 74px); }
 aside { border-right: 1px solid var(--line); overflow: auto; padding: 12px; }
 .hint { color: var(--muted); font-size: 12px; }
