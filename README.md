@@ -46,6 +46,7 @@ Catch URLs (`/b/{bin}`) stay public so vendors can POST. The UI and `/api/*` can
 - [Discord Interactions](#discord-interactions)
 - [MCP server for AI agents](#mcp-server-for-ai-agents)
 - [CLI](#cli)
+- [kodyaz umbrella CLI](#kodyaz-umbrella-cli)
 - [HTTP API](#http-api)
 - [Library](#library)
 - [Security](#security)
@@ -326,6 +327,20 @@ hookyard --host 127.0.0.1 --port 4242 \
 --replay-presets PATH    named replay targets + signing providers (or HOOKYARD_REPLAY_PRESETS)
 --version
 ```
+
+## kodyaz umbrella CLI
+
+`kodyaz` is one entry point for the tools in this package:
+
+```bash
+kodyaz --version
+kodyaz hookyard --port 4242
+kodyaz mcp
+kodyaz openapi ./openapi.json --operation stripeWebhook
+kodyaz openapi ./openapi.json --json > operations.json
+```
+
+`kodyaz hookyard` and `kodyaz mcp` delegate to the existing commands. `kodyaz openapi` lists operations with their suggested replay target and example body; `--base-url` overrides spec servers and `--operation` filters by `operationId`. Invalid specs exit `2`; a filter with no match exits `1`.
 
 ## HTTP API
 
