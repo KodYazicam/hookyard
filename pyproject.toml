@@ -31,6 +31,7 @@ mcp = ["mcp>=2.0"]
 [project.scripts]
 hookyard = "hookyard.cli:main"
 hookyard-mcp = "hookyard.mcp:main"
+kodyaz = "hookyard.umbrella:main"
 
 [project.urls]
 Homepage = "https://github.com/KodYazicam/hookyard"

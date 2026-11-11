@@ -12,12 +12,12 @@ Small, shippable steps. Upvote or comment on an issue if you want something move
 - [x] OpenAPI import for replay payloads
 - [x] Signed replay presets
 - [x] More MCP tools (list, inspect, replay)
+- [x] `kodyaz` umbrella CLI
 
 ## Next
 
-- [ ] `kodyaz` umbrella CLI
+- [ ] Request diffing
 
 ## Later
 
 - [ ] Team sharing without a hosted service
-- [ ] Request diffing
