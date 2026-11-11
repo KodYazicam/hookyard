@@ -25,6 +25,8 @@ SENSITIVE_HEADERS = {
     "x-auth-token",
 }
 MAX_BODY_CHARS = 200_000
+MAX_EXAMPLE_CHARS = 4_000
+TRUTHY = {"1", "true", "yes", "on"}
 
 
 def _base_url() -> str:
@@ -47,12 +49,24 @@ def _token() -> str:
 
 
 def _get(path: str) -> Any:
+    return _request("GET", path)
+
+
+def _post(path: str, payload: dict[str, Any]) -> Any:
+    return _request("POST", path, payload)
+
+
+def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
     url = f"{_base_url()}{path}"
     headers = {"Accept": "application/json"}
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
     token = _token()
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    request = Request(url, headers=headers, method="GET")
+    request = Request(url, data=data, headers=headers, method=method)
     try:
         with urlopen(request, timeout=10) as response:
             body = response.read().decode("utf-8", "replace")
@@ -68,6 +82,10 @@ def _get(path: str) -> Any:
         return json.loads(body)
     except json.JSONDecodeError as error:
         raise RuntimeError("hookyard API returned invalid JSON") from error
+
+
+def _replay_enabled() -> bool:
+    return os.environ.get("HOOKYARD_MCP_ALLOW_REPLAY", "").strip().lower() in TRUTHY
 
 
 def _summary(record: dict[str, Any]) -> dict[str, Any]:
@@ -110,14 +128,28 @@ def list_bins() -> dict[str, Any]:
     return _get("/api/bins")
 
 
-def list_requests(bin_id: str, limit: int = 50) -> dict[str, Any]:
+def list_requests(
+    bin_id: str,
+    limit: int = 50,
+    q: str | None = None,
+    method: str | None = None,
+) -> dict[str, Any]:
     """List recent captured requests in a bin without payload bodies.
 
-    Use get_request with a request id for headers and body. The result is
-    newest-first and capped at 500 records.
+    Optional `q` matches path/body/headers and `method` filters the HTTP
+    method, both case-insensitively. Use get_request with a request id for
+    headers and body. The result is newest-first and capped at 500 records.
     """
     limit = max(1, min(int(limit), 500))
-    payload = _get(f"/api/bins/{quote(bin_id, safe='')}")
+    path = f"/api/bins/{quote(bin_id, safe='')}"
+    filters: list[str] = []
+    if q:
+        filters.append(f"q={quote(str(q), safe='')}")
+    if method:
+        filters.append(f"method={quote(str(method), safe='')}")
+    if filters:
+        path += "?" + "&".join(filters)
+    payload = _get(path)
     requests = payload.get("requests", [])
     if not isinstance(requests, list):
         raise RuntimeError("hookyard API returned an unexpected requests payload")
@@ -127,6 +159,67 @@ def list_requests(bin_id: str, limit: int = 50) -> dict[str, Any]:
         "returned": min(len(requests), limit),
         "requests": [_summary(record) for record in requests[:limit]],
     }
+
+
+def list_presets() -> dict[str, Any]:
+    """List replay presets (name, target, signing provider) without secrets."""
+    return _get("/api/presets")
+
+
+def suggest_replay(bin_id: str, request_id: str) -> dict[str, Any]:
+    """Match a captured request to the loaded OpenAPI spec and suggest a target.
+
+    Example bodies from the spec are truncated to keep agent context bounded.
+    """
+    payload = _get(
+        f"/api/bins/{quote(bin_id, safe='')}/{quote(request_id, safe='')}/openapi"
+    )
+    operation = payload.get("operation")
+    if isinstance(operation, dict):
+        body = operation.get("body")
+        if isinstance(body, str):
+            operation["body"], truncated = _truncate(body, MAX_EXAMPLE_CHARS)
+            if truncated:
+                operation["body_truncated"] = True
+    return payload
+
+
+def replay_request(
+    bin_id: str,
+    request_id: str,
+    target: str | None = None,
+    preset: str | None = None,
+    max_body_chars: int = 20_000,
+) -> dict[str, Any]:
+    """Replay a captured request to a target or a named preset.
+
+    Disabled unless HOOKYARD_MCP_ALLOW_REPLAY is truthy. Send exactly one of
+    target or preset. The inspector still enforces its SSRF and redirect
+    checks. Response bodies are truncated and sensitive headers redacted.
+    """
+    if not _replay_enabled():
+        raise RuntimeError(
+            "MCP replay is disabled; set HOOKYARD_MCP_ALLOW_REPLAY=1 to enable it"
+        )
+    if bool(target) == bool(preset):
+        raise RuntimeError("send exactly one of target or preset")
+    max_body_chars = max(1, min(int(max_body_chars), MAX_BODY_CHARS))
+    request_payload = {"target": target} if target else {"preset": preset}
+    result = _post(
+        f"/api/bins/{quote(bin_id, safe='')}/{quote(request_id, safe='')}/replay",
+        request_payload,
+    )
+    body = result.get("body")
+    if isinstance(body, str):
+        result["body"], truncated = _truncate(body, max_body_chars)
+        if truncated:
+            result["body_truncated"] = True
+    headers = result.get("headers")
+    if isinstance(headers, dict):
+        result["headers"] = _redact_headers(
+            {str(key): str(value) for key, value in headers.items()}
+        )
+    return result
 
 
 def get_request(
@@ -158,23 +251,29 @@ def get_request(
 
 def _mcp_help() -> str:
     return """
-hookyard mcp — read-only MCP server for a running hookyard inspector
+hookyard mcp — MCP server for a running hookyard inspector
 
 Usage:
   hookyard mcp
 
 Environment:
-  HOOKYARD_URL    Loopback URL of a running inspector.
-                  Default: http://127.0.0.1:4242
-  HOOKYARD_TOKEN  Bearer token when the inspector uses --token.
+  HOOKYARD_URL                Loopback URL of a running inspector.
+                              Default: http://127.0.0.1:4242
+  HOOKYARD_TOKEN              Bearer token when the inspector uses --token.
+  HOOKYARD_MCP_ALLOW_REPLAY   Set to 1/true/yes/on to register replay_request.
+                              Off by default; all other tools are read-only.
 
 Tools:
   health          Check the inspector.
   list_bins       List bins.
-  list_requests   List captured requests without bodies.
+  list_requests   List captured requests; optional q and method filters.
   get_request     Read one request with headers, body, and signatures.
+  suggest_replay  Suggest a target from the loaded OpenAPI spec.
+  list_presets    List replay presets (never secrets).
+  replay_request  Replay a request (only with HOOKYARD_MCP_ALLOW_REPLAY).
 
-The server is stdio-only, read-only, and refuses non-loopback URLs.
+The server is stdio-only and refuses non-loopback URLs. Replay is opt-in and
+still goes through the inspector's SSRF and redirect checks.
 Install the optional dependency with: pip install "hookyard[mcp]"
 """.strip()
 
@@ -203,12 +302,18 @@ def build_server():  # type: ignore[no-untyped-def]
         return list_bins()
 
     @server.tool(name="list_requests")
-    def list_requests_tool(bin_id: str, limit: int = 50) -> dict[str, Any]:
+    def list_requests_tool(
+        bin_id: str,
+        limit: int = 50,
+        q: str | None = None,
+        method: str | None = None,
+    ) -> dict[str, Any]:
         """List recent captured requests in a bin without payload bodies.
 
+        Optional q matches path/body/headers; method filters the HTTP method.
         Use get_request for headers and body. Results are newest-first.
         """
-        return list_requests(bin_id, limit)
+        return list_requests(bin_id, limit, q, method)
 
     @server.tool(name="get_request")
     def get_request_tool(
@@ -224,6 +329,39 @@ def build_server():  # type: ignore[no-untyped-def]
         context bounded.
         """
         return get_request(bin_id, request_id, include_sensitive_headers, max_body_chars)
+
+    @server.tool(name="suggest_replay")
+    def suggest_replay_tool(bin_id: str, request_id: str) -> dict[str, Any]:
+        """Suggest a replay target by matching the request to the OpenAPI spec.
+
+        Returns matched=false when no spec is loaded or nothing matches.
+        """
+        return suggest_replay(bin_id, request_id)
+
+    @server.tool(name="list_presets")
+    def list_presets_tool() -> dict[str, Any]:
+        """List replay presets: name, target, and signing provider."""
+        return list_presets()
+
+    if _replay_enabled():
+
+        @server.tool(name="replay_request")
+        def replay_request_tool(
+            bin_id: str,
+            request_id: str,
+            target: str | None = None,
+            preset: str | None = None,
+            max_body_chars: int = 20_000,
+        ) -> dict[str, Any]:
+            """Replay a captured request to a target or a named preset.
+
+            Send exactly one of target or preset. The inspector still applies
+            its SSRF checks. Response bodies are truncated and sensitive
+            headers redacted.
+            """
+            return replay_request(
+                bin_id, request_id, target, preset, max_body_chars
+            )
 
     return server
 

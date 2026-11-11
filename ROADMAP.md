@@ -11,10 +11,10 @@ Small, shippable steps. Upvote or comment on an issue if you want something move
 - [x] Search and filter captured requests
 - [x] OpenAPI import for replay payloads
 - [x] Signed replay presets
+- [x] More MCP tools (list, inspect, replay)
 
 ## Next
 
-- [ ] More MCP tools (list, inspect, replay)
 - [ ] `kodyaz` umbrella CLI
 
 ## Later
