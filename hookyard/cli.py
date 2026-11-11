@@ -52,6 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("HOOKYARD_OPENAPI_BASE_URL", ""),
         help="Override the OpenAPI server URL when suggesting replay targets (for example, a localhost service).",
     )
+    parser.add_argument(
+        "--replay-presets",
+        default=os.environ.get("HOOKYARD_REPLAY_PRESETS", ""),
+        help="JSON file with named replay targets and optional signing providers.",
+    )
     parser.add_argument("--version", action="store_true")
     return parser
 
@@ -86,12 +91,21 @@ def main(argv: list[str] | None = None) -> int:
     from .app import create_app
     from .openapi import load_spec
     from .persist import JsonFileStore
+    from .presets import load_presets
     from .store import MemoryStore
 
     openapi_spec = None
     if args.openapi:
         try:
             openapi_spec = load_spec(args.openapi)
+        except ValueError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+
+    replay_presets = []
+    if args.replay_presets:
+        try:
+            replay_presets = load_presets(args.replay_presets)
         except ValueError as error:
             print(f"error: {error}", file=sys.stderr)
             return 2
@@ -106,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         hmac_header=args.hmac_header,
         openapi_spec=openapi_spec,
         openapi_base_url=args.openapi_base_url or None,
+        replay_presets=replay_presets,
     )
     try:
         import uvicorn
@@ -122,6 +137,8 @@ def main(argv: list[str] | None = None) -> int:
             f"openapi   {args.openapi} "
             f"({len(app.state.openapi_operations)} operations)"
         )
+    if replay_presets:
+        print(f"presets   {args.replay_presets} ({len(replay_presets)} presets)")
     if token:
         print("ui auth   token required (Authorization: Bearer … or ?token=)")
     if args.host not in {"127.0.0.1", "localhost", "::1"}:

@@ -104,7 +104,13 @@ class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def replay(record: RequestRecord, target: str, timeout: float = 10.0, allow_remote: bool = False) -> dict[str, Any]:
+def replay(
+    record: RequestRecord,
+    target: str,
+    timeout: float = 10.0,
+    allow_remote: bool = False,
+    extra_headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
     parsed = urlparse(target)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return {"ok": False, "status": 0, "headers": {}, "body": "target must be http(s)"}
@@ -122,6 +128,14 @@ def replay(record: RequestRecord, target: str, timeout: float = 10.0, allow_remo
         for k, v in record.headers.items()
         if k.lower() not in HOP_BY_HOP and not k.lower().startswith(":")
     }
+    if extra_headers:
+        replaced = {key.lower() for key in extra_headers}
+        headers = {
+            key: value
+            for key, value in headers.items()
+            if key.lower() not in replaced
+        }
+        headers.update(extra_headers)
     data = record.body.encode("utf-8") if record.body else None
     request = urllib.request.Request(target, data=data, method=record.method, headers=headers)
     opener = urllib.request.build_opener(_SafeRedirectHandler(allow_remote))

@@ -7,6 +7,8 @@ const methodEl = document.getElementById("method");
 const emptyEl = document.getElementById("empty");
 
 let selectedId = null;
+let selectedPreset = null;
+let presets = [];
 let searchTimer = 0;
 let loadSeq = 0;
 
@@ -87,6 +89,7 @@ function renderList(items) {
 
 async function show(id) {
   selectedId = id;
+  selectedPreset = null;
   const res = await fetch(`/api/bins/${encodeURIComponent(binId())}/${encodeURIComponent(id)}`, {
     headers: authHeaders(),
   });
@@ -107,6 +110,11 @@ async function show(id) {
     <pre class="body"></pre>
     <h3>Replay</h3>
     <div class="row">
+      <select id="preset" aria-label="Replay preset" style="flex:1">
+        <option value="">Custom target</option>
+      </select>
+    </div>
+    <div class="row">
       <input id="target" placeholder="http://127.0.0.1:3000/webhook" style="flex:1">
       <button id="replay">Replay</button>
     </div>
@@ -117,16 +125,58 @@ async function show(id) {
   detailEl.querySelector(".meta").textContent = `${item.id} · ${item.size} bytes · ${item.remote}`;
   detailEl.querySelector(".headers").textContent = headers;
   detailEl.querySelector(".body").textContent = item.pretty || item.body || "";
+  renderPresets();
   document.getElementById("replay").onclick = async () => {
     const target = document.getElementById("target").value;
+    const body = selectedPreset ? { preset: selectedPreset } : { target };
     const out = await fetch(`/api/bins/${encodeURIComponent(binId())}/${encodeURIComponent(id)}/replay`, {
       method: "POST",
       headers: { "content-type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ target }),
+      body: JSON.stringify(body),
     });
     document.getElementById("replay-out").textContent = JSON.stringify(await out.json(), null, 2);
   };
   suggestOpenApi(id);
+}
+
+function renderPresets() {
+  const select = document.getElementById("preset");
+  const targetEl = document.getElementById("target");
+  if (!select || !targetEl) return;
+  for (const preset of presets) {
+    const option = document.createElement("option");
+    option.value = preset.name;
+    option.textContent = preset.sign
+      ? `${preset.name} · signed: ${preset.sign}`
+      : preset.name;
+    select.appendChild(option);
+  }
+  select.hidden = presets.length === 0;
+  select.onchange = () => {
+    const preset = presets.find((entry) => entry.name === select.value);
+    if (!preset) {
+      selectedPreset = null;
+      return;
+    }
+    selectedPreset = preset.name;
+    targetEl.value = preset.target;
+  };
+  targetEl.oninput = () => {
+    if (!selectedPreset) return;
+    selectedPreset = null;
+    select.value = "";
+  };
+}
+
+async function loadPresets() {
+  try {
+    const res = await fetch("/api/presets", { headers: authHeaders() });
+    if (!res.ok) return;
+    const data = await res.json();
+    presets = Array.isArray(data.presets) ? data.presets : [];
+  } catch {
+    presets = [];
+  }
 }
 
 async function suggestOpenApi(id) {
@@ -162,11 +212,13 @@ function escapeHtml(value) {
 
 document.getElementById("create").onclick = () => {
   selectedId = null;
+  selectedPreset = null;
   loadBin();
 };
 document.getElementById("clear").onclick = async () => {
   await fetch(`/api/bins/${encodeURIComponent(binId())}`, { method: "DELETE", headers: authHeaders() });
   selectedId = null;
+  selectedPreset = null;
   detailEl.innerHTML = '<p class="empty">Waiting for webhooks…</p>';
   await loadBin();
 };
@@ -183,5 +235,10 @@ ws.onmessage = (ev) => {
   if (msg.type === "request" && msg.record.bin_id === binId()) loadBin();
 };
 
-refreshUrl();
-loadBin();
+async function init() {
+  await loadPresets();
+  refreshUrl();
+  await loadBin();
+}
+
+init();

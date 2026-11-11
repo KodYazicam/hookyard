@@ -42,6 +42,7 @@ Catch URLs (`/b/{bin}`) stay public so vendors can POST. The UI and `/api/*` can
 - [Signature verification](#signature-verification)
 - [Replay (SSRF-safe)](#replay-ssrf-safe)
 - [OpenAPI replay targets](#openapi-replay-targets)
+- [Signed replay presets](#signed-replay-presets)
 - [Discord Interactions](#discord-interactions)
 - [MCP server for AI agents](#mcp-server-for-ai-agents)
 - [CLI](#cli)
@@ -200,6 +201,32 @@ The UI pre-fills the replay target for a matching request and shows the operatio
 - Example bodies come from `example`/`examples`, or are generated from the schema with local `$ref`s resolved.
 - This only suggests a URL. Replay still runs the SSRF checks above.
 
+## Signed replay presets
+
+Stripe and Slack reject stale signatures, and your local secret is usually different from the vendor's. A preset file gives replay a named target plus a signing provider; hookyard recomputes the signature from the captured body with the secrets you already configured.
+
+```json
+{
+  "presets": [
+    {"name": "local-stripe", "target": "http://127.0.0.1:3000/webhooks/stripe", "sign": "stripe"},
+    {"name": "local-github", "target": "http://127.0.0.1:3000/webhooks/github", "sign": "github"},
+    {"name": "local-any", "target": "http://127.0.0.1:3000/hooks", "sign": "hmac"},
+    {"name": "plain", "target": "http://127.0.0.1:3000/hooks"}
+  ]
+}
+```
+
+```bash
+hookyard --stripe-secret "$STRIPE_WHSEC" --replay-presets ./presets.json
+```
+
+- Presets never contain secrets. Signing reuses `--github-secret`, `--stripe-secret`, `--slack-secret`, or `--hmac-secret` (`HOOKYARD_*` works too).
+- The UI shows a preset picker. Selecting one fills the target and marks it signed; editing the target switches back to a custom replay.
+- `POST /api/bins/{id}/{req}/replay` accepts `{ "preset": "local-stripe" }` instead of `{ "target": … }`.
+- A missing secret fails before any network call. Preset targets still go through the SSRF checks above.
+- `GET /api/presets` lists names, targets, and providers without secrets.
+- Discord is not supported: hookyard only has the public key, so it cannot sign.
+
 ## Discord Interactions
 
 If the JSON body has `"type": 1` (PING), hookyard answers `{ "type": 1 }` **only when**:
@@ -288,6 +315,7 @@ hookyard --host 127.0.0.1 --port 4242 \
 --data-file PATH         persist bins as JSON (or HOOKYARD_DATA_FILE)
 --openapi PATH           OpenAPI 3 JSON spec for replay target suggestions (or HOOKYARD_OPENAPI)
 --openapi-base-url URL   override spec servers, e.g. http://127.0.0.1:3000 (or HOOKYARD_OPENAPI_BASE_URL)
+--replay-presets PATH    named replay targets + signing providers (or HOOKYARD_REPLAY_PRESETS)
 --version
 ```
 
@@ -297,11 +325,12 @@ hookyard --host 127.0.0.1 --port 4242 \
 | --- | --- | --- |
 | POST | `/api/bins` | `{ "id": "demo" }` optional; random id if omitted |
 | GET | `/api/bins` | list bin ids |
+| GET | `/api/presets` | replay presets (name, target, sign; no secrets) |
 | GET | `/api/bins/{id}` | recent requests; optional `q`, `method`, and `limit` filters |
 | GET | `/api/bins/{id}/{req}` | one request + `pretty` JSON |
 | GET | `/api/bins/{id}/{req}/openapi` | matched OpenAPI operation + suggested replay target |
 | DELETE | `/api/bins/{id}` | clear |
-| POST | `/api/bins/{id}/{req}/replay` | `{ "target": "http://127.0.0.1:3000/x" }` |
+| POST | `/api/bins/{id}/{req}/replay` | `{ "target": "http://127.0.0.1:3000/x" }` or `{ "preset": "local-stripe" }` |
 | WS | `/ws` | `{ "type": "request", "record": {…} }` |
 
 `GET /api/bins/{id}` filters are applied newest-first before the limit:

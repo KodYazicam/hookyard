@@ -10,10 +10,10 @@ Small, shippable steps. Upvote or comment on an issue if you want something move
 - [ ] Publish to PyPI
 - [x] Search and filter captured requests
 - [x] OpenAPI import for replay payloads
+- [x] Signed replay presets
 
 ## Next
 
-- [ ] Signed replay presets
 - [ ] More MCP tools (list, inspect, replay)
 - [ ] `kodyaz` umbrella CLI
 
