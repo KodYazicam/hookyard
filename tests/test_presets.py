@@ -206,6 +206,73 @@ def test_signed_preset_replaces_captured_signature() -> None:
         server.server_close()
 
 
+@pytest.mark.parametrize(
+    "provider, secret, hmac_header",
+    [
+        ("github", "gh-local", "x-signature"),
+        ("slack", "slack-local", "x-signature"),
+        ("hmac", "shared-local", "x-shopify-hmac-sha256"),
+    ],
+)
+def test_signed_preset_servers_accept_every_provider(
+    provider: str, secret: str, hmac_header: str
+) -> None:
+    server, received = _start_capture()
+    try:
+        presets = [
+            ReplayPreset(
+                "local",
+                f"http://127.0.0.1:{server.server_port}/hook",
+                provider,
+            )
+        ]
+        client = TestClient(
+            create_app(
+                secrets={provider: secret},
+                hmac_header=hmac_header,
+                replay_presets=presets,
+            )
+        )
+        created = client.post(
+            "/b/demo/hook",
+            content=b'{"id":"evt_2"}',
+            headers={
+                "content-type": "application/json",
+                "x-hub-signature-256": "sha256=dead",
+                "x-slack-request-timestamp": "1",
+                "x-slack-signature": "v0=dead",
+                hmac_header: "dead",
+            },
+        ).json()
+
+        result = client.post(
+            f"/api/bins/demo/{created['id']}/replay",
+            json={"preset": "local"},
+        ).json()
+        assert result["ok"] is True
+        assert result["signed"] == provider
+        assert len(received) == 1
+        headers, body = received[0]
+        lower = {key.lower(): value for key, value in headers.items()}
+        if provider == "github":
+            assert verify_github(body, lower["x-hub-signature-256"], secret)
+            assert lower["x-hub-signature-256"] != "sha256=dead"
+        elif provider == "slack":
+            assert verify_slack(
+                body,
+                lower["x-slack-request-timestamp"],
+                lower["x-slack-signature"],
+                secret,
+            )
+            assert lower["x-slack-signature"] != "v0=dead"
+        else:
+            assert verify_hmac(body, lower[hmac_header], secret)
+            assert lower[hmac_header] != "dead"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_signed_preset_fails_closed_without_secret() -> None:
     server, received = _start_capture()
     try:
@@ -238,6 +305,11 @@ def test_preset_replay_rejects_bad_requests() -> None:
     both = client.post(url, json={"preset": "x", "target": "http://127.0.0.1:9/y"})
     assert both.status_code == 400
     assert "not both" in both.json()["error"]
+    empty = client.post(url, json={"preset": "x", "target": ""})
+    assert empty.status_code == 400
+    assert "not both" in empty.json()["error"]
+    assert client.post(url, json={"target": 123}).status_code == 400
+    assert client.post(url, json={}).status_code == 400
 
 
 def test_signed_preset_still_blocks_metadata_hosts() -> None:
