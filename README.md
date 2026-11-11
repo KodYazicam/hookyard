@@ -239,23 +239,30 @@ Without a key, PING returns `401`. That stops a public bind from being used as a
 ## MCP server for AI agents
 
 `hookyard mcp` exposes a running inspector to MCP clients over stdio. It is
-read-only: it can list bins, list requests, and read one request. It cannot
-clear bins, create bins, or replay requests.
+read-only by default: it can list bins, search requests, read one request,
+suggest replay targets, and list presets. It cannot clear or create bins.
+`replay_request` is only registered when you opt in with
+`HOOKYARD_MCP_ALLOW_REPLAY=1`; it still goes through the inspector's SSRF and
+redirect checks.
 
 ```bash
 pip install -e ".[mcp]"
 # terminal 1
-hookyard --port 4242 --token "$HOOKYARD_TOKEN"
+hookyard --port 4242 --token "$HOOKYARD_TOKEN" --openapi ./openapi.json
 # terminal 2 (or your MCP client)
 HOOKYARD_URL=http://127.0.0.1:4242 HOOKYARD_TOKEN="$HOOKYARD_TOKEN" hookyard mcp
+# add HOOKYARD_MCP_ALLOW_REPLAY=1 to enable replay_request
 ```
 
 | Tool | What it does |
 | --- | --- |
 | `health` | Check the local inspector. |
 | `list_bins` | List bins that have captured webhooks. |
-| `list_requests` | List recent requests without bodies. |
+| `list_requests` | List recent requests without bodies; optional `q` and `method` filters. |
 | `get_request` | Read one request with headers, body, and signature results. |
+| `suggest_replay` | Match the request to the loaded OpenAPI spec and suggest a target. |
+| `list_presets` | List replay presets (names, targets, providers; no secrets). |
+| `replay_request` | Replay to a target or preset. Only with `HOOKYARD_MCP_ALLOW_REPLAY=1`. |
 
 Example client configuration:
 
@@ -286,8 +293,9 @@ claude mcp add hookyard \
 MCP output is local-only and bounded. `Authorization`, `Cookie`, and API-key
 headers are redacted by default; pass `include_sensitive_headers: true` to
 `get_request` when you intentionally need them. Bodies are truncated to 20,000
-characters by default. Captured webhook payloads can contain live secrets —
-review them before sending the output anywhere.
+characters by default, OpenAPI example bodies to 4,000, and replay response
+bodies and headers are bounded/redacted too. Captured webhook payloads can
+contain live secrets — review them before sending the output anywhere.
 
 ## CLI
 
