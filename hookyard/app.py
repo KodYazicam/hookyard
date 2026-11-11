@@ -206,7 +206,7 @@ def create_app(
         preset: ReplayPreset | None = None
         extra_headers: dict[str, str] | None = None
         if preset_name is not None:
-            if target:
+            if target is not None:
                 return JSONResponse(
                     {"error": "send target or preset, not both"},
                     status_code=400,
@@ -225,6 +225,8 @@ def create_app(
                     )
                 except ValueError as error:
                     return JSONResponse({"error": str(error)}, status_code=400)
+        if target is not None and not isinstance(target, str):
+            return JSONResponse({"error": "target must be a string"}, status_code=400)
         if not target:
             return JSONResponse({"error": "target required"}, status_code=400)
         result = replay(
