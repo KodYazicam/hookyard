@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .store import MemoryStore, RequestRecord
+from .store import MemoryStore, RequestRecord, record_from_dict
 
 
 class JsonFileStore(MemoryStore):
@@ -32,25 +32,8 @@ class JsonFileStore(MemoryStore):
                 if not isinstance(records, list):
                     continue
                 for item in records:
-                    if not isinstance(item, dict):
-                        continue
                     try:
-                        bucket.append(
-                            RequestRecord(
-                                id=str(item["id"]),
-                                bin_id=str(item.get("bin_id") or bin_id),
-                                method=str(item.get("method") or "POST"),
-                                path=str(item.get("path") or "/"),
-                                query=str(item.get("query") or ""),
-                                headers=dict(item.get("headers") or {}),
-                                body=str(item.get("body") or ""),
-                                content_type=str(item.get("content_type") or ""),
-                                remote=str(item.get("remote") or ""),
-                                created_at=float(item.get("created_at") or 0),
-                                size=int(item.get("size") or 0),
-                                signatures=dict(item.get("signatures") or {}),
-                            )
-                        )
+                        bucket.append(record_from_dict(str(bin_id), item))
                     except (KeyError, TypeError, ValueError):
                         continue
                 loaded[str(bin_id)] = bucket[: self.limit]
@@ -86,3 +69,7 @@ class JsonFileStore(MemoryStore):
         n = super().clear(bin_id)
         self._save()
         return n
+
+    def import_bin(self, bin_id: str, records: list[RequestRecord]) -> None:
+        super().import_bin(bin_id, records)
+        self._save()

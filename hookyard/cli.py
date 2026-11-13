@@ -61,12 +61,98 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _archive_parser(command: str) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog=f"hookyard {command}",
+        description=(
+            "Export one bin to a portable JSON archive."
+            if command == "export"
+            else "Import a portable JSON archive into the data file."
+        ),
+    )
+    parser.add_argument(
+        "--data-file",
+        default=os.environ.get("HOOKYARD_DATA_FILE", ""),
+        help="data file to read or write (or HOOKYARD_DATA_FILE)",
+    )
+    if command == "export":
+        parser.add_argument("bin", help="bin id to export")
+        parser.add_argument(
+            "-o",
+            "--output",
+            required=True,
+            help="path of the JSON archive to write",
+        )
+    else:
+        parser.add_argument("archive", help="JSON archive to import")
+        parser.add_argument(
+            "--rename",
+            action="store_true",
+            help="import under a free bin name if this one already exists",
+        )
+    return parser
+
+
+def _archive_command(command: str, argv: list[str]) -> int:
+    args = _archive_parser(command).parse_args(argv)
+    if not args.data_file:
+        print(
+            "error: a data file is required; pass --data-file or HOOKYARD_DATA_FILE",
+            file=sys.stderr,
+        )
+        return 2
+
+    from .archive import (
+        ArchiveError,
+        import_archive,
+        load_archive,
+        write_archive,
+    )
+    from .persist import JsonFileStore
+
+    if command == "export":
+        store = JsonFileStore(args.data_file)
+        if args.bin not in store.bins():
+            print(
+                f"error: bin {args.bin!r} not found in {args.data_file}",
+                file=sys.stderr,
+            )
+            return 1
+        records = store.list(args.bin, limit=store.limit)
+        try:
+            write_archive(args.output, args.bin, records)
+        except ArchiveError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        print(
+            f"exported {args.bin} ({len(records)} requests) -> {args.output}"
+        )
+        return 0
+
+    # Validate the whole archive before opening or creating the data file.
+    try:
+        loaded = load_archive(args.archive)
+    except ArchiveError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    store = JsonFileStore(args.data_file)
+    try:
+        imported = import_archive(store, loaded, rename=args.rename)
+    except (ArchiveError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    print(f"imported {imported} ({len(loaded.records)} requests)")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
     if raw and raw[0] == "mcp":
         from .mcp import main as mcp_main
 
         return mcp_main(raw[1:])
+    if raw and raw[0] in {"export", "import"}:
+        return _archive_command(raw[0], raw[1:])
 
     parser = build_parser()
     args = parser.parse_args(argv)
