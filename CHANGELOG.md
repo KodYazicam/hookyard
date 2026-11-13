@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Portable, versioned bin archives: `hookyard export <bin> -o file.json` and
   `hookyard import file.json [--rename]`, with schema validation, atomic
   writes, and conflict handling.
+- Opt-in retention for captured bins: `--max-bins` / `HOOKYARD_MAX_BINS` and
+  `--max-age-days` / `HOOKYARD_MAX_AGE_DAYS`, with atomic pruning at startup
+  and after captures.
 - GitHub, Stripe, Slack, Discord, and generic HMAC-SHA256 verification.
 - SSRF-safe replay with loopback/RFC1918 allow-list and metadata blocking.
 - JSON file persistence, token auth for the UI and API, and Docker support.
