@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MCP tools `suggest_replay` and `list_presets`, `q`/`method` filters on
   `list_requests`, and opt-in `replay_request` via
   `HOOKYARD_MCP_ALLOW_REPLAY=1`.
+- MCP `export_bin` and `import_bin` tools that share the CLI archive
+  validation, atomic writes, and `rename` conflict handling; both require
+  `HOOKYARD_DATA_FILE`.
 - `kodyaz` umbrella CLI with `hookyard`, `mcp`, and `openapi` subcommands.
 - Request diffing via `GET /api/bins/{id}/diff?left=…&right=…` and a compare
   picker in the detail pane (header and unified body diffs).

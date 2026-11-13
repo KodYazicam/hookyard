@@ -271,19 +271,25 @@ Without a key, PING returns `401`. That stops a public bind from being used as a
 
 ## MCP server for AI agents
 
-`hookyard mcp` exposes a running inspector to MCP clients over stdio. It is
-read-only by default: it can list bins, search requests, read one request,
-suggest replay targets, and list presets. It cannot clear or create bins.
-`replay_request` is only registered when you opt in with
-`HOOKYARD_MCP_ALLOW_REPLAY=1`; it still goes through the inspector's SSRF and
-redirect checks.
+`hookyard mcp` exposes a running inspector to MCP clients over stdio. Most
+tools are read-only: they list bins, search requests, read one request,
+suggest replay targets, and list presets. It cannot clear bins. `export_bin`
+writes a portable archive file; `import_bin` validates an archive and writes it
+to the data file named by `HOOKYARD_DATA_FILE` (the same file the inspector
+uses with `--data-file`). `replay_request` is only registered when you opt in
+with `HOOKYARD_MCP_ALLOW_REPLAY=1`; it still goes through the inspector's SSRF
+and redirect checks.
 
 ```bash
 pip install -e ".[mcp]"
 # terminal 1
-hookyard --port 4242 --token "$HOOKYARD_TOKEN" --openapi ./openapi.json
+hookyard --port 4242 --data-file ./hookyard.json \
+  --token "$HOOKYARD_TOKEN" --openapi ./openapi.json
 # terminal 2 (or your MCP client)
-HOOKYARD_URL=http://127.0.0.1:4242 HOOKYARD_TOKEN="$HOOKYARD_TOKEN" hookyard mcp
+HOOKYARD_URL=http://127.0.0.1:4242 \
+HOOKYARD_TOKEN="$HOOKYARD_TOKEN" \
+HOOKYARD_DATA_FILE=./hookyard.json \
+hookyard mcp
 # add HOOKYARD_MCP_ALLOW_REPLAY=1 to enable replay_request
 ```
 
@@ -295,7 +301,13 @@ HOOKYARD_URL=http://127.0.0.1:4242 HOOKYARD_TOKEN="$HOOKYARD_TOKEN" hookyard mcp
 | `get_request` | Read one request with headers, body, and signature results. |
 | `suggest_replay` | Match the request to the loaded OpenAPI spec and suggest a target. |
 | `list_presets` | List replay presets (names, targets, providers; no secrets). |
+| `export_bin` | Write one bin to a portable, versioned JSON archive. Requires `HOOKYARD_DATA_FILE`. |
+| `import_bin` | Import an archive; `rename: true` resolves an existing bin name. Requires `HOOKYARD_DATA_FILE`. |
 | `replay_request` | Replay to a target or preset. Only with `HOOKYARD_MCP_ALLOW_REPLAY=1`. |
+
+`import_bin` writes directly to `HOOKYARD_DATA_FILE`. Avoid importing while
+another inspector is actively capturing to the same file, or the last writer
+wins.
 
 Example client configuration:
 
@@ -307,7 +319,8 @@ Example client configuration:
       "args": ["mcp"],
       "env": {
         "HOOKYARD_URL": "http://127.0.0.1:4242",
-        "HOOKYARD_TOKEN": "your-token"
+        "HOOKYARD_TOKEN": "your-token",
+        "HOOKYARD_DATA_FILE": "./hookyard.json"
       }
     }
   }
@@ -320,6 +333,7 @@ For Claude Code:
 claude mcp add hookyard \
   -e HOOKYARD_URL=http://127.0.0.1:4242 \
   -e HOOKYARD_TOKEN="$HOOKYARD_TOKEN" \
+  -e HOOKYARD_DATA_FILE=./hookyard.json \
   -- hookyard mcp
 ```
 
@@ -328,7 +342,9 @@ headers are redacted by default; pass `include_sensitive_headers: true` to
 `get_request` when you intentionally need them. Bodies are truncated to 20,000
 characters by default, OpenAPI example bodies to 4,000, and replay response
 bodies and headers are bounded/redacted too. Captured webhook payloads can
-contain live secrets — review them before sending the output anywhere.
+contain live secrets — review them before sending the output anywhere. Archives
+written by `export_bin` contain those same headers and bodies; treat them like
+the data file.
 
 ## CLI
 

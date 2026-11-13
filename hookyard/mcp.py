@@ -1,7 +1,9 @@
-"""Read-only MCP server for a running hookyard inspector.
+"""MCP server for a running hookyard inspector.
 
-The server talks to the local hookyard HTTP API. It never starts a second
-inspector, never writes to the store, and refuses non-loopback URLs.
+Read tools talk to the local hookyard HTTP API. Archive tools operate on the
+inspector data file named by HOOKYARD_DATA_FILE. The server never starts a
+second inspector and refuses non-loopback URLs; only an explicit import_bin
+call writes to the data file.
 """
 
 from __future__ import annotations
@@ -9,10 +11,20 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
+
+from .archive import (
+    ARCHIVE_VERSION,
+    ArchiveError,
+    import_archive,
+    load_archive,
+    write_archive,
+)
+from .persist import JsonFileStore
 
 DEFAULT_URL = "http://127.0.0.1:4242"
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -86,6 +98,21 @@ def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> A
 
 def _replay_enabled() -> bool:
     return os.environ.get("HOOKYARD_MCP_ALLOW_REPLAY", "").strip().lower() in TRUTHY
+
+
+def _archive_data_file(explicit: str | Path | None = None) -> str:
+    value = (
+        explicit
+        if explicit is not None
+        else os.environ.get("HOOKYARD_DATA_FILE", "")
+    )
+    path = str(value).strip()
+    if not path:
+        raise RuntimeError(
+            "archive tools need HOOKYARD_DATA_FILE; set it to the same "
+            "data file the inspector uses with --data-file"
+        )
+    return path
 
 
 def _summary(record: dict[str, Any]) -> dict[str, Any]:
@@ -164,6 +191,74 @@ def list_requests(
 def list_presets() -> dict[str, Any]:
     """List replay presets (name, target, signing provider) without secrets."""
     return _get("/api/presets")
+
+
+def export_bin(
+    bin_id: str,
+    output: str | Path,
+    data_file: str | Path | None = None,
+) -> dict[str, Any]:
+    """Export one bin to a portable, versioned JSON archive.
+
+    Reads the inspector data file from HOOKYARD_DATA_FILE (or data_file) and
+    writes the archive atomically to output. The archive contains captured
+    headers and bodies, so treat it as sensitive.
+    """
+    path = _archive_data_file(data_file)
+    store = JsonFileStore(path)
+    if bin_id not in store.bins():
+        raise RuntimeError(f"bin {bin_id!r} not found in {path}")
+    records = store.list(bin_id, limit=store.limit)
+    try:
+        write_archive(output, bin_id, records)
+    except ArchiveError as error:
+        raise RuntimeError(str(error)) from error
+    return {
+        "ok": True,
+        "bin": bin_id,
+        "output": str(output),
+        "requests": len(records),
+        "version": ARCHIVE_VERSION,
+    }
+
+
+def import_bin(
+    archive_path: str | Path,
+    rename: bool | str | Path = False,
+    *,
+    data_file: str | Path | None = None,
+) -> dict[str, Any]:
+    """Import a portable JSON archive into HOOKYARD_DATA_FILE.
+
+    The whole archive is validated before the data file is opened. An existing
+    bin is refused unless rename is true, which selects the next free name
+    such as demo-2. Use export_bin to create an archive.
+    """
+    if not isinstance(rename, bool):
+        # Allow the data file as the second positional argument, mirroring
+        # export_bin; rename remains available as a keyword.
+        if data_file is not None:
+            raise TypeError("data_file was provided twice")
+        data_file = rename
+        rename = False
+    path = _archive_data_file(data_file)
+    try:
+        loaded = load_archive(archive_path)
+    except ArchiveError as error:
+        raise RuntimeError(str(error)) from error
+    store = JsonFileStore(path)
+    try:
+        imported = import_archive(store, loaded, rename=rename)
+    except (ArchiveError, ValueError) as error:
+        raise RuntimeError(str(error)) from error
+    return {
+        "ok": True,
+        "bin": imported,
+        "archive_bin": loaded.bin_id,
+        "renamed": imported != loaded.bin_id,
+        "requests": len(loaded.records),
+        "version": ARCHIVE_VERSION,
+    }
 
 
 def suggest_replay(bin_id: str, request_id: str) -> dict[str, Any]:
@@ -260,8 +355,10 @@ Environment:
   HOOKYARD_URL                Loopback URL of a running inspector.
                               Default: http://127.0.0.1:4242
   HOOKYARD_TOKEN              Bearer token when the inspector uses --token.
+  HOOKYARD_DATA_FILE          Data file shared with the inspector; required by
+                              export_bin and import_bin.
   HOOKYARD_MCP_ALLOW_REPLAY   Set to 1/true/yes/on to register replay_request.
-                              Off by default; all other tools are read-only.
+                              Off by default; replay stays opt-in.
 
 Tools:
   health          Check the inspector.
@@ -270,10 +367,13 @@ Tools:
   get_request     Read one request with headers, body, and signatures.
   suggest_replay  Suggest a target from the loaded OpenAPI spec.
   list_presets    List replay presets (never secrets).
+  export_bin      Write one bin to a portable JSON archive.
+  import_bin      Import an archive; rename=true avoids a name conflict.
   replay_request  Replay a request (only with HOOKYARD_MCP_ALLOW_REPLAY).
 
 The server is stdio-only and refuses non-loopback URLs. Replay is opt-in and
-still goes through the inspector's SSRF and redirect checks.
+still goes through the inspector's SSRF and redirect checks. import_bin writes
+only to HOOKYARD_DATA_FILE and only when explicitly called.
 Install the optional dependency with: pip install "hookyard[mcp]"
 """.strip()
 
@@ -342,6 +442,26 @@ def build_server():  # type: ignore[no-untyped-def]
     def list_presets_tool() -> dict[str, Any]:
         """List replay presets: name, target, and signing provider."""
         return list_presets()
+
+    @server.tool(name="export_bin")
+    def export_bin_tool(bin_id: str, output: str) -> dict[str, Any]:
+        """Export one bin to a portable, versioned JSON archive.
+
+        Reads HOOKYARD_DATA_FILE, the same data file the inspector uses with
+        --data-file, and writes atomically to output. The archive contains
+        captured headers and bodies, which may include live secrets.
+        """
+        return export_bin(bin_id, output)
+
+    @server.tool(name="import_bin")
+    def import_bin_tool(archive_path: str, rename: bool = False) -> dict[str, Any]:
+        """Import a portable JSON archive into HOOKYARD_DATA_FILE.
+
+        Validates the whole archive before writing. Refuses to overwrite an
+        existing bin unless rename is true, which picks the next free name such
+        as demo-2. Use export_bin to create an archive.
+        """
+        return import_bin(archive_path, rename)
 
     if _replay_enabled():
 

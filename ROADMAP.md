@@ -11,7 +11,7 @@ Small, shippable steps. Upvote or comment on an issue if you want something move
 - [x] Search and filter captured requests
 - [x] OpenAPI import for replay payloads
 - [x] Signed replay presets
-- [x] More MCP tools (list, inspect, replay)
+- [x] More MCP tools (list, inspect, replay, archives)
 - [x] `kodyaz` umbrella CLI
 - [x] Request diffing
 - [x] Portable bin export/import archives

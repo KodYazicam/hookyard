@@ -174,7 +174,7 @@ def import_archive(
         if not rename:
             raise ArchiveError(
                 f"bin {archive.bin_id!r} already exists; "
-                "pass --rename to import under a new name"
+                "pass rename=True (CLI: --rename) to import under a new name"
             )
         destination = unique_bin_id(store.bins(), archive.bin_id)
     else:
