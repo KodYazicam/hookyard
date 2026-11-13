@@ -92,6 +92,7 @@ def test_server_registers_default_tools(
         "list_presets",
         "export_bin",
         "import_bin",
+        "prune_bins",
     }
 
 
@@ -109,6 +110,7 @@ def test_replay_tool_is_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
         "list_presets",
         "export_bin",
         "import_bin",
+        "prune_bins",
         "replay_request",
     }
 
@@ -399,3 +401,114 @@ def test_mcp_archive_tools_require_data_file(
         mcp.export_bin("demo", str(tmp_path / "demo.json"))
     with pytest.raises(RuntimeError, match="HOOKYARD_DATA_FILE"):
         mcp.import_bin(str(tmp_path / "demo.json"))
+
+
+def _seed_retention_bins(path) -> None:
+    store = JsonFileStore(path)
+    for offset, bin_id in enumerate(("oldest", "middle", "newest")):
+        record = new_record(
+            bin_id,
+            "POST",
+            "/hook",
+            "",
+            {"content-type": "application/json"},
+            '{"ok":true}',
+            "127.0.0.1",
+        )
+        record.created_at = 1_000.0 + offset
+        store.add(record)
+
+
+def test_prune_bins_tool_is_registered_with_a_clear_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("HOOKYARD_MCP_ALLOW_REPLAY", raising=False)
+    server = mcp.build_server()
+    tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
+
+    assert "prune_bins" in tools
+    schema = tools["prune_bins"].input_schema
+    assert schema["type"] == "object"
+    assert set(schema["properties"]) == {"dry_run"}
+    assert set(schema.get("required", [])) == set()
+    assert schema["properties"]["dry_run"]["default"] is False
+    assert "HOOKYARD_DATA_FILE" in tools["prune_bins"].description
+    assert "HOOKYARD_MAX_BINS" in tools["prune_bins"].description
+
+
+def test_mcp_prune_bins_dry_run_then_apply(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "store.json"
+    _seed_retention_bins(path)
+    monkeypatch.setenv("HOOKYARD_DATA_FILE", str(path))
+    monkeypatch.setenv("HOOKYARD_MAX_BINS", "1")
+    monkeypatch.delenv("HOOKYARD_MAX_AGE_DAYS", raising=False)
+    before = path.read_bytes()
+
+    dry = mcp.prune_bins(dry_run=True)
+    assert dry["ok"] is True
+    assert dry["dry_run"] is True
+    assert dry["removed"] == 2
+    assert set(dry["bins"]) == {"oldest", "middle"}
+    assert path.read_bytes() == before
+
+    real = mcp.prune_bins()
+    assert real["ok"] is True
+    assert real["dry_run"] is False
+    assert real["removed"] == 2
+    assert real["bins"] == dry["bins"]
+    assert JsonFileStore(path).bins() == ["newest"]
+
+    assert mcp.prune_bins()["removed"] == 0
+
+
+def test_mcp_prune_bins_with_retention_off_is_a_noop(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "store.json"
+    _seed_retention_bins(path)
+    monkeypatch.setenv("HOOKYARD_DATA_FILE", str(path))
+    monkeypatch.delenv("HOOKYARD_MAX_BINS", raising=False)
+    monkeypatch.delenv("HOOKYARD_MAX_AGE_DAYS", raising=False)
+    before = path.read_bytes()
+
+    result = mcp.prune_bins()
+    assert result["removed"] == 0
+    assert result["bins"] == []
+    assert path.read_bytes() == before
+    assert set(JsonFileStore(path).bins()) == {"oldest", "middle", "newest"}
+
+
+def test_mcp_prune_bins_requires_data_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("HOOKYARD_DATA_FILE", raising=False)
+    with pytest.raises(RuntimeError, match="HOOKYARD_DATA_FILE"):
+        mcp.prune_bins()
+
+
+def test_mcp_prune_bins_rejects_invalid_env(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "store.json"
+    _seed_retention_bins(path)
+    monkeypatch.setenv("HOOKYARD_DATA_FILE", str(path))
+    monkeypatch.setenv("HOOKYARD_MAX_BINS", "0")
+
+    with pytest.raises(RuntimeError, match="HOOKYARD_MAX_BINS"):
+        mcp.prune_bins()
+
+
+def test_mcp_prune_bins_dry_run_does_not_create_a_missing_file(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "missing" / "store.json"
+    monkeypatch.setenv("HOOKYARD_DATA_FILE", str(path))
+    monkeypatch.setenv("HOOKYARD_MAX_BINS", "1")
+    monkeypatch.delenv("HOOKYARD_MAX_AGE_DAYS", raising=False)
+
+    result = mcp.prune_bins(dry_run=True)
+    assert result["removed"] == 0
+    assert not path.exists()
+    assert not path.parent.exists()
