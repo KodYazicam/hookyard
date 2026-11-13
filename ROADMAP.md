@@ -15,6 +15,7 @@ Small, shippable steps. Upvote or comment on an issue if you want something move
 - [x] `kodyaz` umbrella CLI
 - [x] Request diffing
 - [x] Portable bin export/import archives
+- [x] Retention policy for captured bins
 
 ## Later
 

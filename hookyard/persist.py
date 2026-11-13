@@ -9,11 +9,21 @@ from .store import MemoryStore, RequestRecord, record_from_dict
 class JsonFileStore(MemoryStore):
     """MemoryStore that snapshots bins to a JSON file after every mutation."""
 
-    def __init__(self, path: str | Path, limit: int = 500) -> None:
-        super().__init__(limit=limit)
+    def __init__(
+        self,
+        path: str | Path,
+        limit: int = 500,
+        *,
+        max_bins: int | None = None,
+        max_age_days: float | None = None,
+    ) -> None:
+        super().__init__(
+            limit=limit, max_bins=max_bins, max_age_days=max_age_days
+        )
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._load()
+        self.prune()
 
     def _load(self) -> None:
         if not self.path.exists():
@@ -54,6 +64,12 @@ class JsonFileStore(MemoryStore):
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
         tmp.write_text(json.dumps(payload), encoding="utf-8")
         tmp.replace(self.path)
+
+    def prune(self, now: float | None = None) -> list[str]:
+        removed = super().prune(now)
+        if removed:
+            self._save()
+        return removed
 
     def create_bin(self, bin_id: str | None = None) -> str:
         ident = super().create_bin(bin_id)

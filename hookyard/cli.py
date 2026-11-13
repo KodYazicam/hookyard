@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import sys
 
@@ -57,8 +58,66 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("HOOKYARD_REPLAY_PRESETS", ""),
         help="JSON file with named replay targets and optional signing providers.",
     )
+    parser.add_argument(
+        "--max-bins",
+        type=int,
+        default=None,
+        help="Keep at most N bins, removing the oldest first (or HOOKYARD_MAX_BINS).",
+    )
+    parser.add_argument(
+        "--max-age-days",
+        type=float,
+        default=None,
+        help="Remove bins older than N days by last capture (or HOOKYARD_MAX_AGE_DAYS).",
+    )
     parser.add_argument("--version", action="store_true")
     return parser
+
+
+def _env_positive_int(name: str) -> int | None:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a positive integer") from error
+    if value < 1:
+        raise ValueError(f"{name} must be >= 1")
+    return value
+
+
+def _env_positive_float(name: str) -> float | None:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a positive number") from error
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be > 0")
+    return value
+
+
+def _retention_settings(args: argparse.Namespace) -> tuple[int | None, float | None]:
+    max_bins = (
+        args.max_bins
+        if args.max_bins is not None
+        else _env_positive_int("HOOKYARD_MAX_BINS")
+    )
+    max_age_days = (
+        args.max_age_days
+        if args.max_age_days is not None
+        else _env_positive_float("HOOKYARD_MAX_AGE_DAYS")
+    )
+    if max_bins is not None and max_bins < 1:
+        raise ValueError("--max-bins must be >= 1")
+    if max_age_days is not None and (
+        not math.isfinite(max_age_days) or max_age_days <= 0
+    ):
+        raise ValueError("--max-age-days must be > 0")
+    return max_bins, max_age_days
 
 
 def _archive_parser(command: str) -> argparse.ArgumentParser:
@@ -162,6 +221,12 @@ def main(argv: list[str] | None = None) -> int:
         print(__version__)
         return 0
 
+    try:
+        max_bins, max_age_days = _retention_settings(args)
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
     secrets = {
         k: v
         for k, v in {
@@ -196,7 +261,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: {error}", file=sys.stderr)
             return 2
 
-    store = JsonFileStore(args.data_file) if args.data_file else MemoryStore()
+    store = (
+        JsonFileStore(
+            args.data_file,
+            max_bins=max_bins,
+            max_age_days=max_age_days,
+        )
+        if args.data_file
+        else MemoryStore(max_bins=max_bins, max_age_days=max_age_days)
+    )
     token = args.token or None
     app = create_app(
         store=store,
@@ -218,6 +291,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f"catch at  http://{args.host}:{args.port}/b/demo")
     if args.data_file:
         print(f"persist   {args.data_file}")
+    if max_bins is not None or max_age_days is not None:
+        limits: list[str] = []
+        if max_bins is not None:
+            limits.append(f"max {max_bins} bins")
+        if max_age_days is not None:
+            limits.append(f"max age {max_age_days:g} days")
+        print(f"retention {', '.join(limits)}")
     if openapi_spec is not None:
         print(
             f"openapi   {args.openapi} "

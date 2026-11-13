@@ -32,9 +32,44 @@ class RequestRecord:
 Listener = Callable[[RequestRecord], None]
 
 
+def _validate_max_bins(value: int | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError("max_bins must be a positive integer")
+    return value
+
+
+def _validate_max_age_days(value: float | None) -> float | None:
+    if value is None:
+        return None
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or value <= 0
+    ):
+        raise ValueError("max_age_days must be a positive number")
+    return float(value)
+
+
+def _last_activity(records: list[RequestRecord]) -> float | None:
+    if not records:
+        return None
+    return max(record.created_at for record in records)
+
+
 class MemoryStore:
-    def __init__(self, limit: int = 500) -> None:
+    def __init__(
+        self,
+        limit: int = 500,
+        *,
+        max_bins: int | None = None,
+        max_age_days: float | None = None,
+    ) -> None:
         self.limit = limit
+        self.max_bins = _validate_max_bins(max_bins)
+        self.max_age_days = _validate_max_age_days(max_age_days)
         self._lock = threading.Lock()
         self._bins: dict[str, list[RequestRecord]] = {}
         self._listeners: list[Listener] = []
@@ -54,6 +89,7 @@ class MemoryStore:
             bucket = self._bins.setdefault(record.bin_id, [])
             bucket.insert(0, record)
             del bucket[self.limit :]
+            self._prune_locked()
         for listener in list(self._listeners):
             listener(record)
         return record
@@ -95,6 +131,45 @@ class MemoryStore:
             self._bins[bin_id] = []
             return n
 
+    def _prune_locked(self, now: float | None = None) -> list[str]:
+        if self.max_bins is None and self.max_age_days is None:
+            return []
+
+        current = time.time() if now is None else float(now)
+        removed: list[str] = []
+
+        if self.max_age_days is not None:
+            cutoff = current - self.max_age_days * 86_400.0
+            for bin_id, records in list(self._bins.items()):
+                activity = _last_activity(records)
+                if activity is not None and activity < cutoff:
+                    removed.append(bin_id)
+                    del self._bins[bin_id]
+
+        if self.max_bins is not None and len(self._bins) > self.max_bins:
+            # Empty bins have no activity; drop them before data-bearing bins,
+            # then remove the least recently active data bins.
+            candidates = sorted(
+                self._bins.items(),
+                key=lambda item: (
+                    _last_activity(item[1]) is not None,
+                    _last_activity(item[1]) or 0.0,
+                    item[0],
+                ),
+            )
+            for bin_id, _records in candidates:
+                if len(self._bins) <= self.max_bins:
+                    break
+                removed.append(bin_id)
+                del self._bins[bin_id]
+
+        return removed
+
+    def prune(self, now: float | None = None) -> list[str]:
+        """Apply the configured retention policy and return removed bin ids."""
+        with self._lock:
+            return self._prune_locked(now)
+
     def import_bin(self, bin_id: str, records: list[RequestRecord]) -> None:
         """Insert a whole bin in one step, refusing to overwrite an existing one."""
         with self._lock:
@@ -103,6 +178,7 @@ class MemoryStore:
             self._bins[bin_id] = [
                 replace(record, bin_id=bin_id) for record in records
             ][: self.limit]
+            self._prune_locked()
 
     def subscribe(self, listener: Listener) -> Callable[[], None]:
         self._listeners.append(listener)

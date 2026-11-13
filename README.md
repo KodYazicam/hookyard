@@ -37,6 +37,7 @@ Catch URLs (`/b/{bin}`) stay public so vendors can POST. The UI and `/api/*` can
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Bins and URLs](#bins-and-urls)
+- [Retention policy](#retention-policy)
 - [Portable bin archives](#portable-bin-archives)
 - [Token auth](#token-auth)
 - [Expose it to the internet](#expose-it-to-the-internet)
@@ -116,6 +117,32 @@ Bodies larger than 1 MB are rejected (`413`). Bin ids must match `[A-Za-z0-9._-]
 Methods: GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS. Bodies are stored as UTF-8 (replacement on binary).
 
 Store is **in-memory**, cap 500 requests per bin, unless you pass `--data-file`. Restarting the process clears history when you use memory.
+
+## Retention policy
+
+By default, bins are kept forever; only the per-bin 500-request cap applies. For a long-running inspector, bound the data file:
+
+```bash
+hookyard --data-file ./hookyard.json --max-bins 20
+hookyard --data-file ./hookyard.json --max-age-days 7
+hookyard --data-file ./hookyard.json --max-bins 20 --max-age-days 7
+```
+
+- `--max-bins N` / `HOOKYARD_MAX_BINS` keeps the N most recently active
+  bins. Bin age is its newest captured request; empty bins are removed before
+  bins with data.
+- `--max-age-days N` / `HOOKYARD_MAX_AGE_DAYS` removes bins whose newest
+  request is older than N days. Empty bins have no age timestamp and are left
+  alone.
+- Cleanup runs when the data file is opened and after each capture. The file is
+  rewritten once through the existing temporary-file + atomic-replace path, so
+  pruning never leaves partial JSON.
+- There is no pin/protected marker in the data file today; retention is
+  strictly by count and age.
+- Both options are off by default. Zero, negative, and non-numeric values fail
+  at startup.
+- These options belong to the inspector process. `hookyard export`/`import` and
+  the MCP archive tools do not prune the file as a side effect.
 
 ## Portable bin archives
 
@@ -373,6 +400,8 @@ hookyard --host 127.0.0.1 --port 4242 \
 --openapi PATH           OpenAPI 3 JSON spec for replay target suggestions (or HOOKYARD_OPENAPI)
 --openapi-base-url URL   override spec servers, e.g. http://127.0.0.1:3000 (or HOOKYARD_OPENAPI_BASE_URL)
 --replay-presets PATH    named replay targets + signing providers (or HOOKYARD_REPLAY_PRESETS)
+--max-bins N             keep the newest N bins (or HOOKYARD_MAX_BINS)
+--max-age-days N         drop bins idle for N days (or HOOKYARD_MAX_AGE_DAYS)
 --version
 
 export <bin> -o PATH     write a portable archive of one bin (needs --data-file)
@@ -451,14 +480,15 @@ Full policy: [SECURITY.md](./SECURITY.md).
 | Replay rejected | Target resolved to a public or metadata IP. Point at localhost or pass `--allow-remote-replay`. |
 | UI 401 | Open `/?token=…` or send `Authorization: Bearer`. |
 | UI empty | Wrong bin name; click **Open bin**. WS needs same origin (and token query if set). |
-| History gone | In-memory. Expected after restart unless `--data-file`. |
+| History gone | In-memory. Expected after restart unless `--data-file`; retention may also have pruned old bins. |
+| Old bins disappeared | Retention is active. Raise `--max-bins` / `--max-age-days` or remove them. |
 | `body too large` | Payload > 1 MB. |
 
 ## FAQ
 
 **Is this webhook.site?** Same idea, local, with provider HMAC built in.
 
-**Does it persist to disk?** Only with `--data-file` / `HOOKYARD_DATA_FILE`. Default is memory.
+**Does it persist to disk?** Only with `--data-file` / `HOOKYARD_DATA_FILE`. Default is memory. Use `--max-bins` / `--max-age-days` to bound a long-lived file.
 
 **HTTPS?** Terminate TLS on the tunnel / reverse proxy.
 
