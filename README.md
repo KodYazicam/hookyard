@@ -38,6 +38,7 @@ Catch URLs (`/b/{bin}`) stay public so vendors can POST. The UI and `/api/*` can
 - [Quick start](#quick-start)
 - [Bins and URLs](#bins-and-urls)
 - [Retention policy](#retention-policy)
+- [Prune stored bins](#prune-stored-bins)
 - [Portable bin archives](#portable-bin-archives)
 - [Token auth](#token-auth)
 - [Expose it to the internet](#expose-it-to-the-internet)
@@ -141,8 +142,24 @@ hookyard --data-file ./hookyard.json --max-bins 20 --max-age-days 7
   strictly by count and age.
 - Both options are off by default. Zero, negative, and non-numeric values fail
   at startup.
-- These options belong to the inspector process. `hookyard export`/`import` and
-  the MCP archive tools do not prune the file as a side effect.
+- The inspector, `hookyard prune`, and the MCP `prune_bins` tool share these
+  settings. Archive export/import do not prune as a side effect.
+
+## Prune stored bins
+
+Apply retention to an existing data file without starting the inspector:
+
+```bash
+hookyard prune --data-file ./hookyard.json --dry-run
+hookyard prune --data-file ./hookyard.json
+```
+
+`prune` reads `HOOKYARD_MAX_BINS` and `HOOKYARD_MAX_AGE_DAYS` (or `--max-bins` /
+`--max-age-days`). `--dry-run` prints the bins that would be removed and does
+not write the file or create missing paths. A real run rewrites the file once
+through the atomic replace path and prints the removed count and bin ids. If
+neither limit is set, it removes nothing. MCP clients can call `prune_bins`
+with `dry_run: true` for the same preview.
 
 ## Portable bin archives
 
@@ -300,12 +317,13 @@ Without a key, PING returns `401`. That stops a public bind from being used as a
 
 `hookyard mcp` exposes a running inspector to MCP clients over stdio. Most
 tools are read-only: they list bins, search requests, read one request,
-suggest replay targets, and list presets. It cannot clear bins. `export_bin`
-writes a portable archive file; `import_bin` validates an archive and writes it
-to the data file named by `HOOKYARD_DATA_FILE` (the same file the inspector
-uses with `--data-file`). `replay_request` is only registered when you opt in
-with `HOOKYARD_MCP_ALLOW_REPLAY=1`; it still goes through the inspector's SSRF
-and redirect checks.
+suggest replay targets, and list presets. It cannot clear an individual bin.
+`export_bin` writes a portable archive file; `import_bin` validates an archive
+and writes it to the data file named by `HOOKYARD_DATA_FILE` (the same file the
+inspector uses with `--data-file`). `prune_bins` applies `HOOKYARD_MAX_BINS` /
+`HOOKYARD_MAX_AGE_DAYS`; pass `dry_run: true` to preview. `replay_request` is
+only registered when you opt in with `HOOKYARD_MCP_ALLOW_REPLAY=1`; it still
+goes through the inspector's SSRF and redirect checks.
 
 ```bash
 pip install -e ".[mcp]"
@@ -330,11 +348,12 @@ hookyard mcp
 | `list_presets` | List replay presets (names, targets, providers; no secrets). |
 | `export_bin` | Write one bin to a portable, versioned JSON archive. Requires `HOOKYARD_DATA_FILE`. |
 | `import_bin` | Import an archive; `rename: true` resolves an existing bin name. Requires `HOOKYARD_DATA_FILE`. |
+| `prune_bins` | Apply retention; `dry_run: true` previews. Requires `HOOKYARD_DATA_FILE`. |
 | `replay_request` | Replay to a target or preset. Only with `HOOKYARD_MCP_ALLOW_REPLAY=1`. |
 
-`import_bin` writes directly to `HOOKYARD_DATA_FILE`. Avoid importing while
-another inspector is actively capturing to the same file, or the last writer
-wins.
+`import_bin` and `prune_bins` write directly to `HOOKYARD_DATA_FILE`. Avoid
+writing while another inspector is actively capturing to the same file, or the
+last writer wins.
 
 Example client configuration:
 
@@ -406,6 +425,7 @@ hookyard --host 127.0.0.1 --port 4242 \
 
 export <bin> -o PATH     write a portable archive of one bin (needs --data-file)
 import PATH [--rename]   import an archive (needs --data-file)
+prune [--dry-run]        apply retention to a data file (needs --data-file)
 ```
 
 ## kodyaz umbrella CLI

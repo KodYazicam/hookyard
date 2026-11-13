@@ -1,9 +1,9 @@
 """MCP server for a running hookyard inspector.
 
-Read tools talk to the local hookyard HTTP API. Archive tools operate on the
-inspector data file named by HOOKYARD_DATA_FILE. The server never starts a
-second inspector and refuses non-loopback URLs; only an explicit import_bin
-call writes to the data file.
+Read tools talk to the local hookyard HTTP API. Archive and prune tools operate
+on the inspector data file named by HOOKYARD_DATA_FILE. The server never starts
+a second inspector and refuses non-loopback URLs; only an explicit import_bin
+or prune_bins call writes to the data file.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from .archive import (
     write_archive,
 )
 from .persist import JsonFileStore
+from .retention import prune_data_file, resolve_retention
 
 DEFAULT_URL = "http://127.0.0.1:4242"
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -100,7 +101,11 @@ def _replay_enabled() -> bool:
     return os.environ.get("HOOKYARD_MCP_ALLOW_REPLAY", "").strip().lower() in TRUTHY
 
 
-def _archive_data_file(explicit: str | Path | None = None) -> str:
+def _archive_data_file(
+    explicit: str | Path | None = None,
+    *,
+    purpose: str = "archive tools",
+) -> str:
     value = (
         explicit
         if explicit is not None
@@ -109,7 +114,7 @@ def _archive_data_file(explicit: str | Path | None = None) -> str:
     path = str(value).strip()
     if not path:
         raise RuntimeError(
-            "archive tools need HOOKYARD_DATA_FILE; set it to the same "
+            f"{purpose} requires HOOKYARD_DATA_FILE; set it to the same "
             "data file the inspector uses with --data-file"
         )
     return path
@@ -261,6 +266,27 @@ def import_bin(
     }
 
 
+def prune_bins(dry_run: bool = False) -> dict[str, Any]:
+    """Apply HOOKYARD_MAX_BINS/HOOKYARD_MAX_AGE_DAYS to HOOKYARD_DATA_FILE.
+
+    A dry run returns the bins that would be removed without writing. A real
+    prune rewrites the data file atomically and reports the removed count.
+    """
+    if not isinstance(dry_run, bool):
+        raise RuntimeError("dry_run must be true or false")
+    path = _archive_data_file(purpose="prune_bins")
+    try:
+        max_bins, max_age_days = resolve_retention()
+        return prune_data_file(
+            path,
+            max_bins=max_bins,
+            max_age_days=max_age_days,
+            dry_run=dry_run,
+        )
+    except (OSError, ValueError) as error:
+        raise RuntimeError(str(error)) from error
+
+
 def suggest_replay(bin_id: str, request_id: str) -> dict[str, Any]:
     """Match a captured request to the loaded OpenAPI spec and suggest a target.
 
@@ -356,7 +382,9 @@ Environment:
                               Default: http://127.0.0.1:4242
   HOOKYARD_TOKEN              Bearer token when the inspector uses --token.
   HOOKYARD_DATA_FILE          Data file shared with the inspector; required by
-                              export_bin and import_bin.
+                              export_bin, import_bin, and prune_bins.
+  HOOKYARD_MAX_BINS           Retention: keep at most N bins.
+  HOOKYARD_MAX_AGE_DAYS       Retention: remove bins idle for N days.
   HOOKYARD_MCP_ALLOW_REPLAY   Set to 1/true/yes/on to register replay_request.
                               Off by default; replay stays opt-in.
 
@@ -369,11 +397,12 @@ Tools:
   list_presets    List replay presets (never secrets).
   export_bin      Write one bin to a portable JSON archive.
   import_bin      Import an archive; rename=true avoids a name conflict.
+  prune_bins      Apply HOOKYARD_MAX_BINS/HOOKYARD_MAX_AGE_DAYS; dry_run lists.
   replay_request  Replay a request (only with HOOKYARD_MCP_ALLOW_REPLAY).
 
 The server is stdio-only and refuses non-loopback URLs. Replay is opt-in and
-still goes through the inspector's SSRF and redirect checks. import_bin writes
-only to HOOKYARD_DATA_FILE and only when explicitly called.
+still goes through the inspector's SSRF and redirect checks. import_bin and
+prune_bins write only to HOOKYARD_DATA_FILE and only when explicitly called.
 Install the optional dependency with: pip install "hookyard[mcp]"
 """.strip()
 
@@ -462,6 +491,15 @@ def build_server():  # type: ignore[no-untyped-def]
         as demo-2. Use export_bin to create an archive.
         """
         return import_bin(archive_path, rename)
+
+    @server.tool(name="prune_bins")
+    def prune_bins_tool(dry_run: bool = False) -> dict[str, Any]:
+        """Apply retention to HOOKYARD_DATA_FILE.
+
+        Uses HOOKYARD_MAX_BINS and HOOKYARD_MAX_AGE_DAYS. With dry_run=true,
+        returns the bins that would be removed without writing the file.
+        """
+        return prune_bins(dry_run)
 
     if _replay_enabled():
 

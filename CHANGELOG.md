@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Opt-in retention for captured bins: `--max-bins` / `HOOKYARD_MAX_BINS` and
   `--max-age-days` / `HOOKYARD_MAX_AGE_DAYS`, with atomic pruning at startup
   and after captures.
+- `hookyard prune [--dry-run]` and MCP `prune_bins` for applying retention to
+  an existing data file on demand, with atomic writes and removed-bin counts.
 - GitHub, Stripe, Slack, Discord, and generic HMAC-SHA256 verification.
 - SSRF-safe replay with loopback/RFC1918 allow-list and metadata blocking.
 - JSON file persistence, token auth for the UI and API, and Docker support.

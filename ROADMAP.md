@@ -16,6 +16,7 @@ Small, shippable steps. Upvote or comment on an issue if you want something move
 - [x] Request diffing
 - [x] Portable bin export/import archives
 - [x] Retention policy for captured bins
+- [x] On-demand prune command and MCP prune tool
 
 ## Later
 

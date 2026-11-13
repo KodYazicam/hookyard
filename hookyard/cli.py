@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import argparse
-import math
 import os
 import sys
+
+from .retention import describe_retention, prune_data_file, resolve_retention
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="hookyard",
         description="Local webhook inspector. Catch, inspect, verify, replay.",
-        epilog="MCP server: hookyard mcp (install with: pip install \"hookyard[mcp]\")",
+        epilog=(
+            "Commands: hookyard mcp, export, import, prune. "
+            "MCP server: hookyard mcp (install with: pip install \"hookyard[mcp]\")"
+        ),
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=4242)
@@ -74,50 +78,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _env_positive_int(name: str) -> int | None:
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return None
-    try:
-        value = int(raw)
-    except ValueError as error:
-        raise ValueError(f"{name} must be a positive integer") from error
-    if value < 1:
-        raise ValueError(f"{name} must be >= 1")
-    return value
-
-
-def _env_positive_float(name: str) -> float | None:
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return None
-    try:
-        value = float(raw)
-    except ValueError as error:
-        raise ValueError(f"{name} must be a positive number") from error
-    if not math.isfinite(value) or value <= 0:
-        raise ValueError(f"{name} must be > 0")
-    return value
-
-
 def _retention_settings(args: argparse.Namespace) -> tuple[int | None, float | None]:
-    max_bins = (
-        args.max_bins
-        if args.max_bins is not None
-        else _env_positive_int("HOOKYARD_MAX_BINS")
-    )
-    max_age_days = (
-        args.max_age_days
-        if args.max_age_days is not None
-        else _env_positive_float("HOOKYARD_MAX_AGE_DAYS")
-    )
-    if max_bins is not None and max_bins < 1:
-        raise ValueError("--max-bins must be >= 1")
-    if max_age_days is not None and (
-        not math.isfinite(max_age_days) or max_age_days <= 0
-    ):
-        raise ValueError("--max-age-days must be > 0")
-    return max_bins, max_age_days
+    return resolve_retention(args.max_bins, args.max_age_days)
+
+
+def _bin_count(count: int) -> str:
+    return f"{count} bin" if count == 1 else f"{count} bins"
 
 
 def _archive_parser(command: str) -> argparse.ArgumentParser:
@@ -204,6 +170,71 @@ def _archive_command(command: str, argv: list[str]) -> int:
     return 0
 
 
+def _prune_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="hookyard prune",
+        description=(
+            "Apply the configured retention policy to a hookyard data file."
+        ),
+    )
+    parser.add_argument(
+        "--data-file",
+        default=os.environ.get("HOOKYARD_DATA_FILE", ""),
+        help="data file to prune (or HOOKYARD_DATA_FILE)",
+    )
+    parser.add_argument(
+        "--max-bins",
+        type=int,
+        default=None,
+        help="keep at most N bins (or HOOKYARD_MAX_BINS)",
+    )
+    parser.add_argument(
+        "--max-age-days",
+        type=float,
+        default=None,
+        help="remove bins idle for N days (or HOOKYARD_MAX_AGE_DAYS)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="list bins that would be removed without writing",
+    )
+    return parser
+
+
+def _prune_command(argv: list[str]) -> int:
+    args = _prune_parser().parse_args(argv)
+    if not args.data_file:
+        print(
+            "error: a data file is required; pass --data-file or HOOKYARD_DATA_FILE",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        max_bins, max_age_days = _retention_settings(args)
+        result = prune_data_file(
+            args.data_file,
+            max_bins=max_bins,
+            max_age_days=max_age_days,
+            dry_run=args.dry_run,
+        )
+    except (OSError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
+    if not result["configured"]:
+        print("retention is not configured; nothing to prune")
+        return 0
+
+    action = "would remove" if args.dry_run else "removed"
+    removed = result["bins"]
+    if removed:
+        print(f"{action} {_bin_count(len(removed))}: {', '.join(removed)}")
+    else:
+        print(f"{action} 0 bins")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
     if raw and raw[0] == "mcp":
@@ -212,6 +243,8 @@ def main(argv: list[str] | None = None) -> int:
         return mcp_main(raw[1:])
     if raw and raw[0] in {"export", "import"}:
         return _archive_command(raw[0], raw[1:])
+    if raw and raw[0] == "prune":
+        return _prune_command(raw[1:])
 
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -292,12 +325,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.data_file:
         print(f"persist   {args.data_file}")
     if max_bins is not None or max_age_days is not None:
-        limits: list[str] = []
-        if max_bins is not None:
-            limits.append(f"max {max_bins} bins")
-        if max_age_days is not None:
-            limits.append(f"max age {max_age_days:g} days")
-        print(f"retention {', '.join(limits)}")
+        print(f"retention {describe_retention(max_bins, max_age_days)}")
     if openapi_spec is not None:
         print(
             f"openapi   {args.openapi} "

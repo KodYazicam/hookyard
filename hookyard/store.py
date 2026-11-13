@@ -68,11 +68,19 @@ class MemoryStore:
         max_age_days: float | None = None,
     ) -> None:
         self.limit = limit
-        self.max_bins = _validate_max_bins(max_bins)
-        self.max_age_days = _validate_max_age_days(max_age_days)
+        self.configure_retention(max_bins=max_bins, max_age_days=max_age_days)
         self._lock = threading.Lock()
         self._bins: dict[str, list[RequestRecord]] = {}
         self._listeners: list[Listener] = []
+
+    def configure_retention(
+        self,
+        *,
+        max_bins: int | None = None,
+        max_age_days: float | None = None,
+    ) -> None:
+        self.max_bins = _validate_max_bins(max_bins)
+        self.max_age_days = _validate_max_age_days(max_age_days)
 
     def create_bin(self, bin_id: str | None = None) -> str:
         ident = bin_id or secrets.token_urlsafe(8)
@@ -131,7 +139,7 @@ class MemoryStore:
             self._bins[bin_id] = []
             return n
 
-    def _prune_locked(self, now: float | None = None) -> list[str]:
+    def _prune_candidates(self, now: float | None = None) -> list[str]:
         if self.max_bins is None and self.max_age_days is None:
             return []
 
@@ -140,17 +148,22 @@ class MemoryStore:
 
         if self.max_age_days is not None:
             cutoff = current - self.max_age_days * 86_400.0
-            for bin_id, records in list(self._bins.items()):
+            for bin_id, records in self._bins.items():
                 activity = _last_activity(records)
                 if activity is not None and activity < cutoff:
                     removed.append(bin_id)
-                    del self._bins[bin_id]
 
-        if self.max_bins is not None and len(self._bins) > self.max_bins:
+        dropped = set(removed)
+        remaining = {
+            bin_id: records
+            for bin_id, records in self._bins.items()
+            if bin_id not in dropped
+        }
+        if self.max_bins is not None and len(remaining) > self.max_bins:
             # Empty bins have no activity; drop them before data-bearing bins,
             # then remove the least recently active data bins.
             candidates = sorted(
-                self._bins.items(),
+                remaining.items(),
                 key=lambda item: (
                     _last_activity(item[1]) is not None,
                     _last_activity(item[1]) or 0.0,
@@ -158,12 +171,23 @@ class MemoryStore:
                 ),
             )
             for bin_id, _records in candidates:
-                if len(self._bins) <= self.max_bins:
+                if len(remaining) <= self.max_bins:
                     break
                 removed.append(bin_id)
-                del self._bins[bin_id]
+                del remaining[bin_id]
 
         return removed
+
+    def _prune_locked(self, now: float | None = None) -> list[str]:
+        removed = self._prune_candidates(now)
+        for bin_id in removed:
+            del self._bins[bin_id]
+        return removed
+
+    def preview_prune(self, now: float | None = None) -> list[str]:
+        """Return bin ids retention would remove without changing the store."""
+        with self._lock:
+            return self._prune_candidates(now)
 
     def prune(self, now: float | None = None) -> list[str]:
         """Apply the configured retention policy and return removed bin ids."""
