@@ -14,6 +14,7 @@ Small, shippable steps. Upvote or comment on an issue if you want something move
 - [x] More MCP tools (list, inspect, replay)
 - [x] `kodyaz` umbrella CLI
 - [x] Request diffing
+- [x] Portable bin export/import archives
 
 ## Later
 

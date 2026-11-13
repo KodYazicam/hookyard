@@ -37,6 +37,7 @@ Catch URLs (`/b/{bin}`) stay public so vendors can POST. The UI and `/api/*` can
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Bins and URLs](#bins-and-urls)
+- [Portable bin archives](#portable-bin-archives)
 - [Token auth](#token-auth)
 - [Expose it to the internet](#expose-it-to-the-internet)
 - [Signature verification](#signature-verification)
@@ -115,6 +116,21 @@ Bodies larger than 1 MB are rejected (`413`). Bin ids must match `[A-Za-z0-9._-]
 Methods: GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS. Bodies are stored as UTF-8 (replacement on binary).
 
 Store is **in-memory**, cap 500 requests per bin, unless you pass `--data-file`. Restarting the process clears history when you use memory.
+
+## Portable bin archives
+
+`--data-file` keeps every bin in one JSON file. To move a single bin (for a bug report, a teammate, or another machine), export it as a versioned archive and import it elsewhere:
+
+```bash
+hookyard export demo -o demo.json --data-file ./hookyard.json
+hookyard import demo.json --data-file ./other.json
+```
+
+- Archives carry `"version": 1`. Import validates the whole document before writing anything: invalid JSON, missing fields, duplicate request ids, invalid bin ids, and unsupported versions leave the data file untouched.
+- Both commands need `--data-file` or `HOOKYARD_DATA_FILE`.
+- Import refuses to overwrite an existing bin. Pass `--rename` to import under the next free name (for example `demo-2`); the original bin stays intact.
+- Export writes through a temporary file and replaces the target atomically, so a failed export leaves no partial archive.
+- Archives contain captured headers and bodies, which may include live secrets. Handle them like the data file.
 
 ## Token auth
 
@@ -342,6 +358,9 @@ hookyard --host 127.0.0.1 --port 4242 \
 --openapi-base-url URL   override spec servers, e.g. http://127.0.0.1:3000 (or HOOKYARD_OPENAPI_BASE_URL)
 --replay-presets PATH    named replay targets + signing providers (or HOOKYARD_REPLAY_PRESETS)
 --version
+
+export <bin> -o PATH     write a portable archive of one bin (needs --data-file)
+import PATH [--rename]   import an archive (needs --data-file)
 ```
 
 ## kodyaz umbrella CLI
