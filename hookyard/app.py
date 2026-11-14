@@ -304,7 +304,7 @@ def create_app(
         if request.headers.get("content-type", "").startswith("application/json"):
             try:
                 parsed = json.loads(record.body)
-                if parsed.get("type") == 1:
+                if isinstance(parsed, dict) and parsed.get("type") == 1:
                     if "discord" not in secrets:
                         return JSONResponse(
                             {"error": "discord public key is required to ACK PINGs"},

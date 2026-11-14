@@ -254,6 +254,18 @@ def test_discord_ping_requires_key() -> None:
     assert res.status_code == 401
 
 
+def test_json_non_object_bodies_are_captured_once() -> None:
+    app = create_app()
+    client = TestClient(app)
+    payloads = [b'[{"event":"test"}]', b"[1,2,3]", b'"hello"', b"42", b"true"]
+    for payload in payloads:
+        res = client.post("/b/demo", content=payload, headers={"content-type": "application/json"})
+        assert res.status_code == 200
+        assert res.json()["ok"] is True
+    stored = client.get("/api/bins/demo").json()["requests"]
+    assert len(stored) == len(payloads)
+
+
 def test_json_file_store(tmp_path) -> None:
     path = tmp_path / "store.json"
     store = JsonFileStore(path, limit=10)
